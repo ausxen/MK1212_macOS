@@ -1,0 +1,10 @@
+ausxen's MK1212 macOS Launcher
+
+Drag the "MK1212 Mac Launcher" folder onto the Applications shortcut in this
+disk image. The installed folder will be:
+
+    /Applications/MK1212 Mac Launcher/
+
+Open "MK1212 Mac Launcher.app" from that folder, or add that app to Steam as
+a non-Steam game. To remove the launcher, close ATTILA and open
+"Uninstall MK1212 Mac Launcher.app".

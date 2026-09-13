@@ -1,0 +1,48 @@
+#!/bin/zsh
+set -euo pipefail
+
+repo_root="${0:A:h:h}"
+version="0.6.1"
+dist_root="$repo_root/dist"
+archive="$dist_root/mk1212-mac-launcher-v${version}.zip"
+
+if [[ -e "$archive" ]]; then
+    print -u2 "Refusing to overwrite existing release: $archive"
+    exit 1
+fi
+
+build_root="$(mktemp -d /private/tmp/mk1212-release.XXXXXX)"
+trap 'rm -rf "$build_root"' EXIT
+release_root="$build_root/MK1212 Mac Launcher v${version}"
+app_root="$release_root/MK1212 Mac Launcher.app"
+uninstaller_root="$release_root/Uninstall MK1212 Mac Launcher.app"
+
+mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
+mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
+mkdir -p "$release_root/bin" "$release_root/src" "$release_root/config/load-orders" "$dist_root"
+
+cp "$repo_root/app/Info.plist" "$app_root/Contents/Info.plist"
+cp "$repo_root/app/launcher" "$app_root/Contents/MacOS/MK1212 Mac Launcher"
+cp "$repo_root/src/mk1212_mac_tool.py" "$app_root/Contents/Resources/mk1212_mac_tool.py"
+cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212MacLauncher.icns"
+cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plist"
+cp "$repo_root/app/uninstaller/launcher" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
+cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
+cp "$repo_root/src/mk1212_mac_tool.py" "$release_root/src/mk1212_mac_tool.py"
+cp "$repo_root/bin/"mk1212-mac-* "$release_root/bin/"
+cp "$repo_root/config/load-orders/"*.txt "$release_root/config/load-orders/"
+cp "$repo_root/README.md" "$repo_root/LICENSE" "$repo_root/NOTICE.md" "$release_root/"
+cp "$repo_root/docs/TESTING.md" "$release_root/TESTING.md"
+
+chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
+chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py" "$release_root/src/mk1212_mac_tool.py"
+chmod 755 "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
+chmod 755 "$release_root/bin/"mk1212-mac-*
+xattr -cr "$app_root" "$uninstaller_root"
+codesign --force --deep --sign - "$app_root"
+codesign --verify --deep --strict --verbose=2 "$app_root"
+codesign --force --deep --sign - "$uninstaller_root"
+codesign --verify --deep --strict --verbose=2 "$uninstaller_root"
+
+ditto -c -k --norsrc --keepParent "$release_root" "$archive"
+print "$archive"

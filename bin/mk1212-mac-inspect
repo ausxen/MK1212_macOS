@@ -1,0 +1,3 @@
+#!/bin/zsh
+exec "${0:A:h:h}/src/mk1212_mac_tool.py" inspect "$@"
+

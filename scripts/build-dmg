@@ -1,0 +1,51 @@
+#!/bin/zsh
+set -euo pipefail
+
+repo_root="${0:A:h:h}"
+version="${VERSION:-0.6.1}"
+dist_root="$repo_root/dist"
+archive="$dist_root/ausxen-MK1212-macOS-launcher-${version}.dmg"
+
+if [[ -e "$archive" ]]; then
+    print -u2 "Refusing to overwrite existing release: $archive"
+    exit 1
+fi
+
+build_root="$(mktemp -d /private/tmp/mk1212-dmg.XXXXXX)"
+clean_root="$(mktemp -d /private/tmp/mk1212-dmg-clean.XXXXXX)"
+trap 'rm -rf "$build_root" "$clean_root"' EXIT
+
+container="$build_root/MK1212 Mac Launcher"
+app_root="$container/MK1212 Mac Launcher.app"
+uninstaller_root="$container/Uninstall MK1212 Mac Launcher.app"
+mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
+mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
+mkdir -p "$dist_root"
+
+cp "$repo_root/app/Info.plist" "$app_root/Contents/Info.plist"
+cp "$repo_root/app/launcher" "$app_root/Contents/MacOS/MK1212 Mac Launcher"
+cp "$repo_root/src/mk1212_mac_tool.py" "$app_root/Contents/Resources/mk1212_mac_tool.py"
+cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212MacLauncher.icns"
+
+cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plist"
+cp "$repo_root/app/uninstaller/launcher" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
+cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
+cp "$repo_root/docs/DMG-INSTALL.txt" "$container/README.txt"
+
+chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
+chmod 755 "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
+chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py"
+xattr -cr "$app_root" "$uninstaller_root"
+codesign --force --deep --sign - "$app_root"
+codesign --verify --deep --strict "$app_root"
+codesign --force --deep --sign - "$uninstaller_root"
+codesign --verify --deep --strict "$uninstaller_root"
+
+# Build from a metadata-clean copy so Finder/File Provider attributes do not
+# invalidate the ad-hoc signatures when the DMG is mounted.
+ditto --norsrc --noqtn "$container" "$clean_root/MK1212 Mac Launcher"
+ln -s /Applications "$clean_root/Applications"
+hdiutil create -volname "ausxen's MK1212 macOS Launcher" -srcfolder "$clean_root" \
+    -ov -format UDZO "$archive"
+shasum -a 256 "$archive" > "$archive.sha256"
+print "$archive"
