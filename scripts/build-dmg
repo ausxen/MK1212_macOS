@@ -47,5 +47,5 @@ ditto --norsrc --noqtn "$container" "$clean_root/MK1212 Mac Launcher"
 ln -s /Applications "$clean_root/Applications"
 hdiutil create -volname "ausxen's MK1212 macOS Launcher" -srcfolder "$clean_root" \
     -ov -format UDZO "$archive"
-shasum -a 256 "$archive" > "$archive.sha256"
+( cd "$dist_root" && shasum -a 256 "${archive:t}" > "${archive:t}.sha256" )
 print "$archive"

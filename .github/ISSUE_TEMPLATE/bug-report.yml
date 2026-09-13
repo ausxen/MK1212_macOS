@@ -1,0 +1,79 @@
+name: Compatibility report
+description: Report a reproducible launcher, campaign, battle, or asset failure
+title: "[Compatibility]: "
+labels: [compatibility]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not upload game/mod packs, credentials, or unredacted private paths.
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS
+      description: Chip, memory, and macOS version
+    validations:
+      required: true
+  - type: input
+    id: attila
+    attributes:
+      label: ATTILA version
+      description: Feral version, build, and language
+    validations:
+      required: true
+  - type: textarea
+    id: order
+    attributes:
+      label: Exact load order
+      description: Paste the load-order file; do not attach pack files
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Failure stage
+      options:
+        - Install or rebuild
+        - Feral Options window
+        - Splash or main menu
+        - Campaign load
+        - End turn
+        - Battle load
+        - Battle gameplay
+        - Uninstall
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: verify
+    attributes:
+      label: Redacted verification output
+      description: Output from mk1212-mac-verify --quick --json
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: controls
+    attributes:
+      label: Control results
+      description: State whether vanilla and the 13-pack core preset work
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: ATTILA was closed during install, rebuild, and uninstall operations.
+          required: true
+        - label: I did not manually modify Workshop packs or the Feral app.
+          required: true
+        - label: I redacted usernames and account identifiers.
+          required: true
+

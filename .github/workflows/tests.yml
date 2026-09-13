@@ -1,0 +1,27 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - name: Python tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Shell syntax
+        run: |
+          zsh -n app/launcher
+          for script in bin/* scripts/*; do zsh -n "$script"; done
+      - name: Build release
+        run: ./scripts/build-release
+
