@@ -1,22 +1,22 @@
 # ausxen's MK1212 macOS Launcher
 
-[_Reading is for geeks just give me the launcher_](https://github.com/ausxen/MK1212_macOS/blob/main/dist/MK1212_macOS-0.6.1.dmg)
+[_Reading is for geeks, just give me the launcher._](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.6.1.dmg)
 
-## Table of ~~Condiments~~ Contents
+## Table of Contents
 
-1. [[#Why Tho]]
-2. [[#The Boring Technical Part]]
-	1. [[#Test Status & Limitations]]
-	2. [[#What It Do?]]
-	3. [[#Requirements]]
-	4. [[#Install From Release]]
-	5. [[#Verify]]
-	6. [[#Uninstall]]
-	7. [[#Data Locations]]
-	8. [[#Safety First]]
-3. [[#Build From Source]]
-4. [[#Give Me DMG]]
-5. [[#Bug Reporting]]
+1. [Why Tho](#why-tho)
+2. [The Boring Technical Part](#the-boring-technical-part)
+   1. [Test Status and Limitations](#test-status-and-limitations)
+   2. [What It Do](#what-it-does)
+   3. [Requirements](#requirements)
+   4. [Install From Release](#install-from-release)
+   5. [Verify](#verify)
+   6. [Uninstall](#uninstall)
+   7. [Data Locations](#data-locations)
+   8. [Safety First](#safety-first)
+3. [Build From Source](#build-from-source)
+4. [Give Me DMG](#give-me-dmg)
+5. [Bug Reporting](#bug-reporting)
 
 ## Why Tho
 
@@ -35,7 +35,7 @@ Anyway now for all the boring stuff.
 
 _You should actually probably read at least the first part of this._
 
-### Test Status & Limitations
+### Test Status and Limitations
 
 I tested it as follows:
 
@@ -48,7 +48,7 @@ Your mileage may vary. If it does, let me know, because I want us all to get as 
 
 **10-Slot Settlements _DOES NOT_ work. If anyone has a brilliant idea of how to make it work without getting a DMCA notice, let me know.**
 
-### What It Do?
+### What It Do
 
 _Boring list of how this thing functions._
 
@@ -74,7 +74,8 @@ _I mean at least, this is what I have._
 - macOS 12 or newer
 - A native Feral Total War: ATTILA Steam installation
 - Python 3.9 or newer
-- Steam Workshop subscriptions for every pack in the chosen load-order file
+- Steam Workshop subscriptions for the MK1212 core and any optional packs you
+  want to test
 - Enough free space for generated packs; APFS is strongly recommended
 
 The launcher checks `/usr/bin/python3`, Apple Silicon Homebrew, then Intel Homebrew. If none provides Python 3.9+, install Python before continuing. 
@@ -87,19 +88,24 @@ _"I WANT IT AND I WANT IT NOW!"_
 2. Drag the `MK1212 Mac Launcher` folder onto the Applications shortcut.
 3. Open `MK1212 Mac Launcher.app` from `/Applications/MK1212 Mac Launcher/`.
 4. Quit ATTILA completely before preparing a profile.
-5. Inspect the intended pack graph if using the command-line tools:
+5. Inspect the discovered MK1212 core and currently enabled optional packs if
+   using the command-line tools:
 
    ```sh
-   ./bin/mk1212-mac-inspect --load-order-file config/load-orders/mk1212-core.txt
+   ./bin/mk1212-mac-inspect
    ```
 
 6. Prepare the compatibility cache:
 
    ```sh
-   ./bin/mk1212-mac-install --load-order-file config/load-orders/mk1212-core.txt
+   ./bin/mk1212-mac-install
    ```
 
 7. Open that app, or add it to Steam as a non-Steam game. Use each checkbox to enable or disable an optional mod, and set its priority number to control submod order (1 loads first).
+
+The launcher discovers installed Workshop packs automatically. Before each
+launch, check or uncheck optional packs and set their priority numbers in the
+selector; no submod-specific load-order file is required.
 
 **Do not enable the same Workshop packs in Feral's Mod Manager when launching the game with this launcher. This launcher uses an isolated copy of Feral's preferences with mod toggles disabled.**
 
@@ -121,7 +127,9 @@ Full verification recomputes Workshop source hashes:
 
 If Steam updates a selected Workshop pack, verification will request a rebuild. 
 
-Quit ATTILA, uninstall, then install again with the same load-order file. A new combination of already indexed submods is cached on first use; the launcher shows a notice because this can take up to a minute.
+Quit ATTILA, uninstall, then install again if a Workshop source changes. A new
+combination of already indexed submods is cached on first use; the launcher
+shows a notice because this can take up to a minute.
 
 ### Uninstall
 
@@ -155,7 +163,7 @@ Do not make unredacted `state.json` or diagnostic logs public. I don't want to h
 
 ### Safety First
 
-_Use protection! lol jk you play TW you don't get b!tches... or dudes... idk whatever you're into you don't get any and I know that for a fact on god fr fr no cap._
+_Use protection! lol jk you play TW you don't get b!tches... or dudes… idk, whatever you're into you don't get any, and I know that for a fact, on god fr fr no cap._
 
 The tool refuses compatibility writes while ATTILA is already running. It never writes inside the Feral `.app` or a Workshop item directory.
 
@@ -183,7 +191,9 @@ macOS Privacy & Security.
 
 _In case you don't know how to download a file from a GitHub repo — which is fine, we're not all insufferable nerdcels who spend our lives in front of computers... though you're a Total War gamer which I'm not sure is much better._
 
-[**DOWNLOAD THE LAUNCHER YES THIS IS A REAL LINK NOT A SCAM LINK THERE ARE NO LONELY MILFS NEAR YOU AND I DON'T EVEN KNOW WHAT AN EXTENDED WARRANTY IS**](https://github.com/ausxen/MK1212_macOS/blob/main/dist/MK1212_macOS-0.6.1.dmg)
+[**DOWNLOAD THE LAUNCHER!!!!** (yes this is a real link, there are no lonely milfs near you, and i don't even know what an extended warranty is)](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.6.1.dmg)
+
+[Download the SHA-256 checksum](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.6.1.dmg.sha256)
 
 ## Bug Reporting
 
