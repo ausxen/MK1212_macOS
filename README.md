@@ -1,6 +1,6 @@
 # ausxen's MK1212 macOS Launcher
 
-_Reading is for geeks just give me the launcher_
+[_Reading is for geeks just give me the launcher_](https://github.com/ausxen/MK1212_macOS/blob/main/dist/MK1212_macOS-0.6.1.dmg)
 
 ## Table of ~~Condiments~~ Contents
 
@@ -16,6 +16,7 @@ _Reading is for geeks just give me the launcher_
 	8. [[#Safety First]]
 3. [[#Build From Source]]
 4. [[#Give Me DMG]]
+5. [[#Bug Reporting]]
 
 ## Why Tho
 
@@ -32,6 +33,8 @@ Anyway now for all the boring stuff.
 
 ## The Boring Technical Part
 
+_You should actually probably read at least the first part of this._
+
 ### Test Status & Limitations
 
 I tested it as follows:
@@ -46,6 +49,8 @@ Your mileage may vary. If it does, let me know, because I want us all to get as 
 **10-Slot Settlements _DOES NOT_ work. If anyone has a brilliant idea of how to make it work without getting a DMCA notice, let me know.**
 
 ### What It Do?
+
+_Boring list of how this thing functions._
 
 - Discovers Steam libraries, ATTILA, and Workshop item directories.
 - Prepares ordered local type-4/movie representations in a hidden cache.
@@ -64,6 +69,8 @@ Your mileage may vary. If it does, let me know, because I want us all to get as 
 
 ### Requirements
 
+_I mean at least, this is what I have._
+
 - macOS 12 or newer
 - A native Feral Total War: ATTILA Steam installation
 - Python 3.9 or newer
@@ -73,6 +80,8 @@ Your mileage may vary. If it does, let me know, because I want us all to get as 
 The launcher checks `/usr/bin/python3`, Apple Silicon Homebrew, then Intel Homebrew. If none provides Python 3.9+, install Python before continuing. 
 
 ### Install From Release
+
+_"I WANT IT AND I WANT IT NOW!"_
 
 1. Download `MK1212_macOS-0.6.1.dmg`.
 2. Drag the `MK1212 Mac Launcher` folder onto the Applications shortcut.
@@ -96,6 +105,8 @@ The launcher checks `/usr/bin/python3`, Apple Silicon Homebrew, then Intel Homeb
 
 ### Verify
 
+_This is how the thing works and makes sure it can keep working._
+
 Quick verification runs automatically before every launch:
 
 ```sh
@@ -114,6 +125,8 @@ Quit ATTILA, uninstall, then install again with the same load-order file. A new 
 
 ### Uninstall
 
+_For when you decide you should probably get off your computer and do something valuable with your life._
+
 Quit ATTILA, then open `Uninstall MK1212 Mac Launcher.app` from the installed folder, or run:
 
 ```sh
@@ -123,6 +136,8 @@ Quit ATTILA, then open `Uninstall MK1212 Mac Launcher.app` from the installed fo
 The tool first recovers any stale transient activation, backs up the then-current Feral manifest, and removes only its exact hidden cache. It never restores an old manifest wholesale over a newer installation.
 
 ### Data Locations
+
+_This is where all the files and sh!t go._
 
 Generated state, manifest backups, activation history, and diagnostic logs:
 
@@ -140,6 +155,8 @@ Do not make unredacted `state.json` or diagnostic logs public. I don't want to h
 
 ### Safety First
 
+_Use protection! lol jk you play TW you don't get b!tches... or dudes... idk whatever you're into you don't get any and I know that for a fact on god fr fr no cap._
+
 The tool refuses compatibility writes while ATTILA is already running. It never writes inside the Feral `.app` or a Workshop item directory.
 
 Cached files live under `TotalWarAttilaData/.mk1212-cache`; selected generated packs, loose Lua, `used_mods.txt`, and manifest entries exist in the live tree only for a custom launcher session.
@@ -149,6 +166,8 @@ Ordinary exits and handled termination signals clean up in a `finally` path.
 A hard power loss or forced `SIGKILL` can leave a stale activation until the next launcher command recovers it; run `mk1212-mac-verify --quick` before a normal launch after such an interruption.
 
 ### Build From Source
+
+_In case you want to, which I know you don't._
 
 ```sh
 python3 -m unittest discover -s tests -v
@@ -162,7 +181,14 @@ macOS Privacy & Security.
 
 ## Give Me DMG
 
-In case you don't know how to download a file from a GitHub repo — which is fine, we're not all insufferable nerdcels who spend our lives in front of computers... though you're a Total War gamer which I'm not sure is much better.
+_In case you don't know how to download a file from a GitHub repo — which is fine, we're not all insufferable nerdcels who spend our lives in front of computers... though you're a Total War gamer which I'm not sure is much better._
 
-**DOWNLOAD THE LAUNCHER YES THIS IS A REAL LINK NOT A SCAM LINK THERE ARE NO LONELY MILFS NEAR YOU AND I DON'T EVEN KNOW WHAT AN EXTENDED WARRANTY IS**
+[**DOWNLOAD THE LAUNCHER YES THIS IS A REAL LINK NOT A SCAM LINK THERE ARE NO LONELY MILFS NEAR YOU AND I DON'T EVEN KNOW WHAT AN EXTENDED WARRANTY IS**](https://github.com/ausxen/MK1212_macOS/blob/main/dist/MK1212_macOS-0.6.1.dmg)
 
+## Bug Reporting
+
+_The lanternflies! They're f&cking everywhere!_
+
+DM me on Discord `@austenballard`
+
+I will try to keep this updated through at least mid-2027.
