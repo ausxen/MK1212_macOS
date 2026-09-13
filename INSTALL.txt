@@ -1,0 +1,15 @@
+ausxen's MK1212 macOS Launcher
+
+DMG installation
+----------------
+Open `MK1212_macOS-0.6.1.dmg`, then drag the `MK1212 Mac Launcher` folder
+onto the Applications shortcut. The installed folder is:
+
+    /Applications/MK1212 Mac Launcher/
+
+Open `MK1212 Mac Launcher.app` from that folder, or add that app to Steam as a
+non-Steam game. To remove the launcher, close ATTILA and open
+`Uninstall MK1212 Mac Launcher.app`.
+
+The launcher does not include Total War: ATTILA or Workshop content. Users must
+own the game and subscribe to the required Workshop packs separately.

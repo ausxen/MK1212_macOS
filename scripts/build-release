@@ -19,7 +19,7 @@ uninstaller_root="$release_root/Uninstall MK1212 Mac Launcher.app"
 
 mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
 mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
-mkdir -p "$release_root/bin" "$release_root/src" "$release_root/config/load-orders" "$dist_root"
+mkdir -p "$release_root/bin" "$release_root/src" "$dist_root"
 
 cp "$repo_root/app/Info.plist" "$app_root/Contents/Info.plist"
 cp "$repo_root/app/launcher" "$app_root/Contents/MacOS/MK1212 Mac Launcher"
@@ -30,9 +30,7 @@ cp "$repo_root/app/uninstaller/launcher" "$uninstaller_root/Contents/MacOS/Unins
 cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
 cp "$repo_root/src/mk1212_mac_tool.py" "$release_root/src/mk1212_mac_tool.py"
 cp "$repo_root/bin/"mk1212-mac-* "$release_root/bin/"
-cp "$repo_root/config/load-orders/"*.txt "$release_root/config/load-orders/"
 cp "$repo_root/README.md" "$repo_root/LICENSE" "$repo_root/NOTICE.md" "$release_root/"
-cp "$repo_root/docs/TESTING.md" "$release_root/TESTING.md"
 
 chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
 chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py" "$release_root/src/mk1212_mac_tool.py"

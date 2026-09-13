@@ -1028,6 +1028,22 @@ def refresh_optional_sources(state: dict) -> list[str]:
         state.setdefault("source_packs", []).append(source_record(pack, metadata["pack_type"]))
         existing.add(key)
         added.append(name)
+    # Keep a separate, user-controlled order for optional packs.  Newly
+    # discovered Workshop content is appended instead of silently changing
+    # the priority of packs the user has already arranged.
+    if added:
+        if "optional_load_order" in state:
+            current = list(state.get("optional_load_order") or [])
+        else:
+            added_keys = {name.casefold() for name in added}
+            current = [record["name"] for record in state["source_packs"]
+                       if record.get("optional") and record["name"].casefold() not in added_keys]
+        known = {name.casefold() for name in current}
+        for name in added:
+            if name.casefold() not in known:
+                current.append(name)
+                known.add(name.casefold())
+        state["optional_load_order"] = current
     return added
 
 
@@ -1404,13 +1420,36 @@ def optional_pack_names(state: dict) -> list[str]:
     return [record["name"] for record in state["source_packs"] if record.get("optional")]
 
 
+def optional_load_order(state: dict) -> list[str]:
+    """Return all installed optional packs in the user's persisted order.
+
+    Older state files have no explicit order.  In that case the source-pack
+    order is the compatibility-preserving fallback, and missing/new packs are
+    appended deterministically.
+    """
+    available = optional_pack_names(state)
+    by_key = {name.casefold(): name for name in available}
+    result: list[str] = []
+    seen: set[str] = set()
+    for name in state.get("optional_load_order", []):
+        key = str(name).casefold()
+        if key in by_key and key not in seen:
+            result.append(by_key[key])
+            seen.add(key)
+    for name in available:
+        key = name.casefold()
+        if key not in seen:
+            result.append(name)
+            seen.add(key)
+    return result
+
+
 def selected_names(state: dict, optionals: list[str]) -> list[str]:
     enabled = {name.casefold() for name in optionals}
     # MK1212's own pack-checker expects optional utilities above the required
-    # core packs.  The first matching loose-Lua member is retained below, so
-    # this ordering also preserves the author's intended submod priority.
-    optional = [record["name"] for record in state["source_packs"]
-                if record.get("optional") and record["name"].casefold() in enabled]
+    # core packs.  Preserve the user's explicit optional priority while
+    # keeping the source-order fallback for older state files.
+    optional = [name for name in optional_load_order(state) if name.casefold() in enabled]
     core = [record["name"] for record in state["source_packs"] if not record.get("optional")]
     return optional + core
 
@@ -1422,25 +1461,35 @@ function run(argv) {
     const config = JSON.parse(argv[0]);
     const alert = $.NSAlert.alloc.init;
     alert.messageText = "MK1212 Mac Launcher";
-    alert.informativeText = "Choose optional submods. Unchecked items are disabled for this launch; core MK1212 packs remain enabled.";
+    alert.informativeText = "Check the submods to use. Set a priority number to reorder them (1 loads first). Unchecked items are disabled for this launch; core MK1212 packs remain enabled.";
     alert.addButtonWithTitle(config.actionLabel);
     alert.addButtonWithTitle("Cancel");
 
-    const width = 520;
-    const rowHeight = 26;
-    const height = Math.max(rowHeight, config.options.length * rowHeight);
+    const width = 650;
+    const rowHeight = 30;
+    const height = Math.max(rowHeight, config.items.length * rowHeight);
     const view = $.NSView.alloc.initWithFrame($.NSMakeRect(0, 0, width, height));
     const boxes = [];
-    for (let index = 0; index < config.options.length; index++) {
-        const title = config.options[index];
+    const ranks = [];
+    for (let index = 0; index < config.items.length; index++) {
+        const item = config.items[index];
         const box = $.NSButton.alloc.initWithFrame(
-            $.NSMakeRect(0, height - ((index + 1) * rowHeight), width, rowHeight)
+            $.NSMakeRect(0, height - ((index + 1) * rowHeight), width - 100, rowHeight)
         );
         box.setButtonType($.NSSwitchButton);
-        box.title = $(title);
-        box.state = config.selected.indexOf(title) >= 0 ? 1 : 0;
+        box.title = $(item.name);
+        box.state = item.selected ? 1 : 0;
         view.addSubview(box);
         boxes.push(box);
+
+        const rank = $.NSTextField.alloc.initWithFrame(
+            $.NSMakeRect(width - 82, height - ((index + 1) * rowHeight) + 3, 72, rowHeight - 6)
+        );
+        rank.stringValue = $(String(item.rank));
+        rank.alignment = $.NSTextAlignmentRight;
+        rank.placeholderString = $("priority");
+        view.addSubview(rank);
+        ranks.push(rank);
     }
     alert.accessoryView = view;
     $.NSApplication.sharedApplication.activateIgnoringOtherApps(true);
@@ -1448,23 +1497,35 @@ function run(argv) {
     if (response !== Number(ObjC.unwrap($.NSAlertFirstButtonReturn))) {
         return "__CANCEL__";
     }
-    const picked = [];
+    const rows = [];
     for (let index = 0; index < boxes.length; index++) {
-        if (Number(ObjC.unwrap(boxes[index].state)) === 1) {
-            picked.push(config.options[index]);
+        const name = config.items[index].name;
+        const rawRank = Number(ObjC.unwrap(ranks[index].stringValue));
+        const rank = Number.isFinite(rawRank) ? rawRank : index + 1;
+        rows.push({name: name, selected: Number(ObjC.unwrap(boxes[index].state)) === 1,
+                   rank: rank, index: index});
+    }
+    rows.sort((left, right) => left.rank - right.rank || left.index - right.index);
+    const order = rows.map(row => row.name);
+    const picked = [];
+    for (const row of rows) {
+        if (row.selected) {
+            picked.push(row.name);
         }
     }
-    return JSON.stringify(picked);
+    return JSON.stringify({selected: picked, order: order});
 }
 '''
 
 
-def choose_optional_packs(state: dict, action_label: str = "Launch") -> list[str] | None:
-    optionals = optional_pack_names(state)
+def choose_optional_packs(state: dict, action_label: str = "Launch") -> dict | None:
+    optionals = optional_load_order(state)
     if not optionals:
-        return []
-    current = state.get("selected_optional_packs", optionals)
-    config = json.dumps({"options": optionals, "selected": current, "actionLabel": action_label})
+        return {"selected": [], "order": []}
+    current = {name.casefold() for name in state.get("selected_optional_packs", optionals)}
+    items = [{"name": name, "selected": name.casefold() in current, "rank": index + 1}
+             for index, name in enumerate(optionals)]
+    config = json.dumps({"items": items, "actionLabel": action_label})
     result = subprocess.run(["/usr/bin/osascript", "-l", "JavaScript", "-e", CHECKBOX_PICKER_JXA,
                              "--", config], capture_output=True, text=True)
     if result.returncode != 0:
@@ -1476,9 +1537,28 @@ def choose_optional_packs(state: dict, action_label: str = "Launch") -> list[str
         picked = json.loads(value)
     except json.JSONDecodeError as exc:
         raise ToolError(f"submod chooser returned invalid data: {value!r}") from exc
-    if not isinstance(picked, list) or any(item not in optionals for item in picked):
+    if isinstance(picked, list):
+        # Accept the old helper's output if a cached/older app happens to
+        # return it; it cannot express a reordered list, but remains safe.
+        if any(item not in optionals for item in picked):
+            raise ToolError("submod chooser returned an invalid selection")
+        return {"selected": [name for name in optionals if name in picked],
+                "order": optionals}
+    if not isinstance(picked, dict) or not isinstance(picked.get("selected"), list) \
+            or not isinstance(picked.get("order"), list):
         raise ToolError("submod chooser returned an invalid selection")
-    return [item for item in optionals if item in picked]
+    order = picked["order"]
+    selected = picked["selected"]
+    if (len(order) != len(optionals) or {str(item).casefold() for item in order} !=
+            {name.casefold() for name in optionals} or
+            any(item not in order for item in selected) or
+            len({str(item).casefold() for item in selected}) != len(selected)):
+        raise ToolError("submod chooser returned an invalid order or selection")
+    canonical = {name.casefold(): name for name in optionals}
+    order = [canonical[str(name).casefold()] for name in order]
+    selected_set = {str(name).casefold() for name in selected}
+    return {"selected": [name for name in order if name.casefold() in selected_set],
+            "order": order}
 
 
 def show_first_use_notice() -> None:
@@ -1524,7 +1604,8 @@ def install_command(args: argparse.Namespace) -> None:
                                   "sha256": sha256_path(Path(args.load_order_file).expanduser().resolve())}
                                  if args.load_order_file else None),
              "manifest_backups": [backup], "source_packs": sources, "profiles": {},
-             "selected_optional_packs": [item["name"] for item in sources if item["optional"]]}
+             "selected_optional_packs": [item["name"] for item in sources if item["optional"]],
+             "optional_load_order": [item["name"] for item in sources if item["optional"]]}
     state_dir.mkdir(parents=True, exist_ok=True)
     save_json(state_file, state)
     try:
@@ -1685,17 +1766,19 @@ def configure_command(args: argparse.Namespace) -> None:
         raise ToolError(f"state is {state.get('status')!r}, not prepared")
     recover_stale_activation(state_dir, state)
     refresh_optional_sources(state)
-    picked = choose_optional_packs(state, "Save")
-    if picked is None:
+    choice = choose_optional_packs(state, "Save")
+    if choice is None:
         print("Submod selection cancelled.")
         return
-    state["selected_optional_packs"] = picked
-    names = selected_names(state, picked)
+    state["optional_load_order"] = choice["order"]
+    state["selected_optional_packs"] = choice["selected"]
+    names = selected_names(state, choice["selected"])
     if profile_key(records_for_names(state, names)) not in state.get("profiles", {}):
         show_first_use_notice()
     profile = ensure_profile(state_dir, state, names)
     save_json(state_dir / "state.json", state)
-    print("Selected optional submods: " + (", ".join(picked) if picked else "none (core only)"))
+    print("Selected optional submods: " +
+          (", ".join(choice["selected"]) if choice["selected"] else "none (core only)"))
     print(f"Prepared profile {profile['key']} with {len(profile['pack_names'])} packs.")
 
 
@@ -1747,10 +1830,12 @@ def launch_command(args: argparse.Namespace) -> None:
     elif args.no_picker:
         picked = state.get("selected_optional_packs", optional_pack_names(state))
     else:
-        picked = choose_optional_packs(state)
-        if picked is None:
+        choice = choose_optional_packs(state)
+        if choice is None:
             print("Launch cancelled.")
             return
+        state["optional_load_order"] = choice["order"]
+        picked = choice["selected"]
     state["selected_optional_packs"] = picked
     names = selected_names(state, picked)
     if profile_key(records_for_names(state, names)) not in state.get("profiles", {}):

@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="${0:A:h:h}"
 version="${VERSION:-0.6.1}"
 dist_root="$repo_root/dist"
-archive="$dist_root/ausxen-MK1212-macOS-launcher-${version}.dmg"
+archive="$dist_root/MK1212_macOS-${version}.dmg"
 
 if [[ -e "$archive" ]]; then
     print -u2 "Refusing to overwrite existing release: $archive"
@@ -13,6 +13,7 @@ fi
 
 build_root="$(mktemp -d /private/tmp/mk1212-dmg.XXXXXX)"
 clean_root="$(mktemp -d /private/tmp/mk1212-dmg-clean.XXXXXX)"
+rw_image="$build_root/volume-rw.dmg"
 trap 'rm -rf "$build_root" "$clean_root"' EXIT
 
 container="$build_root/MK1212 Mac Launcher"
@@ -30,7 +31,7 @@ cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212M
 cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plist"
 cp "$repo_root/app/uninstaller/launcher" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
-cp "$repo_root/docs/DMG-INSTALL.txt" "$container/README.txt"
+cp "$repo_root/INSTALL.txt" "$container/README.txt"
 
 chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
 chmod 755 "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
@@ -45,7 +46,17 @@ codesign --verify --deep --strict "$uninstaller_root"
 # invalidate the ad-hoc signatures when the DMG is mounted.
 ditto --norsrc --noqtn "$container" "$clean_root/MK1212 Mac Launcher"
 ln -s /Applications "$clean_root/Applications"
-hdiutil create -volname "ausxen's MK1212 macOS Launcher" -srcfolder "$clean_root" \
-    -ov -format UDZO "$archive"
+cp "$repo_root/app/MK1212MacLauncher.icns" "$clean_root/.VolumeIcon.icns"
+
+# Custom volume icons are preserved reliably when set on a mounted writable
+# image before converting it to the compressed release image.
+hdiutil create -size 32m -fs HFS+ -volname "ausxen's MK1212 macOS Launcher" \
+    -ov "$rw_image" >/dev/null
+hdiutil attach -nobrowse -noverify "$rw_image" >/dev/null
+volume="/Volumes/ausxen's MK1212 macOS Launcher"
+ditto --norsrc --noqtn "$clean_root/" "$volume/"
+SetFile -a C "$volume"
+hdiutil detach "$volume" >/dev/null
+hdiutil convert "$rw_image" -format UDZO -o "$archive" >/dev/null
 ( cd "$dist_root" && shasum -a 256 "${archive:t}" > "${archive:t}.sha256" )
 print "$archive"

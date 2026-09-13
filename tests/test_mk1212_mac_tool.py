@@ -114,6 +114,21 @@ class TransientProfileTests(unittest.TestCase):
             self.assertEqual(state["source_packs"][0]["name"], pack.name)
             self.assertTrue(state["source_packs"][0]["optional"])
 
+    def test_refresh_appends_new_pack_after_legacy_optional_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pack = root / "new-submod.pack"
+            write_pack(pack, [("campaigns/test.lua", b"return true")], pack_type=3)
+            state = {"game_root": str(root), "source_packs": [
+                {"name": "existing-submod.pack", "optional": True},
+            ]}
+            with patch.object(tool, "inventory_packs",
+                              return_value={pack.name.casefold(): [pack]}), \
+                 patch.object(tool, "feral_mod_records", return_value=[]):
+                self.assertEqual(tool.refresh_optional_sources(state), [pack.name])
+            self.assertEqual(tool.optional_load_order(state),
+                             ["existing-submod.pack", pack.name])
+
     def test_safe_destination_rejects_traversal_and_absolute_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -139,6 +154,27 @@ class TransientProfileTests(unittest.TestCase):
             ["submod-high.pack", "submod-low.pack", "core-a.pack", "core-b.pack"],
         )
         self.assertEqual(tool.selected_names(state, []), ["core-a.pack", "core-b.pack"])
+
+    def test_optional_selection_uses_persisted_load_order(self):
+        state = {"source_packs": [
+            {"name": "core-a.pack", "optional": False},
+            {"name": "submod-high.pack", "optional": True},
+            {"name": "submod-low.pack", "optional": True},
+            {"name": "core-b.pack", "optional": False},
+        ], "optional_load_order": ["submod-low.pack", "submod-high.pack"]}
+        self.assertEqual(
+            tool.selected_names(state, ["submod-high.pack", "submod-low.pack"]),
+            ["submod-low.pack", "submod-high.pack", "core-a.pack", "core-b.pack"],
+        )
+
+    def test_optional_load_order_appends_new_packs_without_reordering_existing(self):
+        state = {"source_packs": [
+            {"name": "submod-a.pack", "optional": True},
+            {"name": "submod-b.pack", "optional": True},
+            {"name": "submod-new.pack", "optional": True},
+        ], "optional_load_order": ["submod-b.pack", "submod-a.pack"]}
+        self.assertEqual(tool.optional_load_order(state),
+                         ["submod-b.pack", "submod-a.pack", "submod-new.pack"])
 
     def test_profile_key_changes_with_source_selection(self):
         first = {"name": "core.pack", "sha256": "a" * 64}
