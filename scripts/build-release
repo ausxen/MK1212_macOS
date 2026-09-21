@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="${0:A:h:h}"
-version="0.6.1"
+version="0.7.0"
 dist_root="$repo_root/dist"
 archive="$dist_root/mk1212-mac-launcher-v${version}.zip"
 
@@ -16,24 +16,30 @@ trap 'rm -rf "$build_root"' EXIT
 release_root="$build_root/MK1212 Mac Launcher v${version}"
 app_root="$release_root/MK1212 Mac Launcher.app"
 uninstaller_root="$release_root/Uninstall MK1212 Mac Launcher.app"
+runtime_library="$build_root/libmk1212-slot-runtime-patch.dylib"
 
 mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
 mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
 mkdir -p "$release_root/bin" "$release_root/src" "$dist_root"
 
+"$repo_root/scripts/build-runtime-patch" "$runtime_library" >/dev/null
+
 cp "$repo_root/app/Info.plist" "$app_root/Contents/Info.plist"
 cp "$repo_root/app/launcher" "$app_root/Contents/MacOS/MK1212 Mac Launcher"
 cp "$repo_root/src/mk1212_mac_tool.py" "$app_root/Contents/Resources/mk1212_mac_tool.py"
+cp "$runtime_library" "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212MacLauncher.icns"
 cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plist"
 cp "$repo_root/app/uninstaller/launcher" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
 cp "$repo_root/src/mk1212_mac_tool.py" "$release_root/src/mk1212_mac_tool.py"
+cp "$repo_root/src/mk1212_slot_runtime_patch.c" "$release_root/src/mk1212_slot_runtime_patch.c"
 cp "$repo_root/bin/"mk1212-mac-* "$release_root/bin/"
 cp "$repo_root/README.md" "$repo_root/LICENSE" "$repo_root/NOTICE.md" "$release_root/"
 
 chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
 chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py" "$release_root/src/mk1212_mac_tool.py"
+chmod 755 "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
 chmod 755 "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
 chmod 755 "$release_root/bin/"mk1212-mac-*
 xattr -cr "$app_root" "$uninstaller_root"

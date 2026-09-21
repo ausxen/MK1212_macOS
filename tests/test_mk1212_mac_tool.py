@@ -167,6 +167,20 @@ class TransientProfileTests(unittest.TestCase):
             ["submod-low.pack", "submod-high.pack", "core-a.pack", "core-b.pack"],
         )
 
+    def test_profile_records_follow_selected_load_order(self):
+        state = {"source_packs": [
+            {"name": "core.pack", "optional": False},
+            {"name": "submod-low.pack", "optional": True},
+            {"name": "submod-high.pack", "optional": True},
+        ]}
+        records = tool.records_for_names(
+            state, ["submod-high.pack", "submod-low.pack", "core.pack"]
+        )
+        self.assertEqual(
+            [record["name"] for record in records],
+            ["submod-high.pack", "submod-low.pack", "core.pack"],
+        )
+
     def test_optional_load_order_appends_new_packs_without_reordering_existing(self):
         state = {"source_packs": [
             {"name": "submod-a.pack", "optional": True},
@@ -246,11 +260,13 @@ class TransientProfileTests(unittest.TestCase):
         patched, repairs = tool.apply_lua_compatibility(entry.relative_path, original)
         self.assertNotIn(b'io.open("MK1212_10slots.exe"', patched)
         self.assertNotIn(b'os.execute(command)', patched)
-        self.assertIn(b'DISCLAIMER_ACCEPTED = true;', patched)
+        self.assertIn(b'macOS runtime patch supplies ten slots automatically', patched)
         self.assertIn(b'Windows-only. Never extract or execute it on macOS.', patched)
         self.assertIn(b'CreateDisclaimerPrompt();', patched)
-        self.assertIn(b'button_disclaimer_uic:SetVisible(true);', patched)
-        self.assertEqual(len(repairs), 1)
+        self.assertNotIn(b'button_disclaimer_uic:SetVisible(true);', patched)
+        self.assertGreaterEqual(patched.count(b'button_disclaimer_uic:SetVisible(false);'), 5)
+        self.assertIn(b'always suppress the obsolete Windows helper UI', patched)
+        self.assertEqual(len(repairs), 2)
 
     def test_appdata_paths_are_left_unchanged_pending_a_b_test(self):
         source = (

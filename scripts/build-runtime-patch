@@ -1,0 +1,19 @@
+#!/bin/zsh
+set -euo pipefail
+
+repo_root="${0:A:h:h}"
+output="${1:-$repo_root/build/libmk1212-slot-runtime-patch.dylib}"
+
+mkdir -p "${output:h}"
+/usr/bin/xcrun clang \
+    -arch arm64 \
+    -dynamiclib \
+    -mmacosx-version-min=12.0 \
+    -Wl,-install_name,@rpath/libmk1212-slot-runtime-patch.dylib \
+    -Wall -Wextra -Werror \
+    "$repo_root/src/mk1212_slot_runtime_patch.c" \
+    -o "$output"
+
+/usr/bin/codesign --force --sign - "$output"
+/usr/bin/codesign --verify --strict "$output"
+print "$output"

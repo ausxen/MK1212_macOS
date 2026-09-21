@@ -27,12 +27,15 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO, Iterable
+from typing import BinaryIO, Callable, Iterable
 
 
 APP_ID = "325610"
-TOOL_VERSION = "0.6.1-safe-launcher"
-PROFILE_COMPATIBILITY_REVISION = "mac-slot-safe-noop-v1"
+TOOL_VERSION = "0.7.0"
+PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-hide-windows-ui-v2"
+SUPPORTED_RUNTIME_EXECUTABLE_SHA256 = (
+    "13f5d523019f291f489353fa5d3661bc9a668bb2b0375d6c3201e01d74525c5e"
+)
 DEFAULT_STATE = Path.home() / "Library/Application Support/MK1212 Mac Launcher"
 FERAL_STATE = Path.home() / "Library/Application Support/Feral Interactive/Total War ATTILA"
 GENERATED_PREFIX = "zzz_mk1212shim_"
@@ -143,6 +146,47 @@ def sha256_path(path: Path) -> str:
         for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_path_with_progress(path: Path, progress: Callable[[str], None]) -> str:
+    """Hash a Workshop source while leaving visible progress breadcrumbs."""
+    total = path.stat().st_size
+    digest = hashlib.sha256()
+    done = 0
+    next_report = 25
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+            done += len(chunk)
+            percent = 100 if total == 0 else min(100, int(done * 100 / total))
+            if percent >= next_report:
+                progress(f"Hashing {path.name}: {percent}%")
+                next_report += 25
+    if next_report <= 100:
+        progress(f"Hashing {path.name}: 100%")
+    return digest.hexdigest()
+
+
+def report_rebuild_progress(state_dir: Path, message: str, notify: bool = False) -> None:
+    """Persist rebuild status and best-effort a non-blocking macOS notification."""
+    now = utc_now()
+    log_dir = Path.home() / "Library/Logs/MK1212 Mac Launcher"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        with (log_dir / "rebuild-progress.log").open("a", encoding="utf-8") as stream:
+            stream.write(f"{now}\t{message}\n")
+        save_json(state_dir / "rebuild-progress.json", {"updated_at": now, "message": message})
+    except OSError:
+        # Progress reporting must never make the compatibility rebuild fail.
+        pass
+    if notify:
+        escaped = message.replace("\\", "\\\\").replace('"', '\\"')
+        script = f'display notification "{escaped}" with title "MK1212 Mac Launcher"'
+        try:
+            subprocess.run(["/usr/bin/osascript", "-e", script],
+                           capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
 
 def quick_fingerprint(path: Path) -> str:
@@ -990,10 +1034,17 @@ def inspect_command(args: argparse.Namespace) -> None:
     print(json.dumps(report, indent=2))
 
 
-def source_record(pack: Path, pack_type: int) -> dict:
+def source_record(pack: Path, pack_type: int,
+                  progress: Callable[[str], None] | None = None) -> dict:
     stat = pack.stat()
+    digest = sha256_path_with_progress(pack, progress) if progress else sha256_path(pack)
+    after = pack.stat()
+    if (after.st_size != stat.st_size or after.st_mtime_ns != stat.st_mtime_ns or
+            after.st_dev != stat.st_dev or after.st_ino != stat.st_ino):
+        raise ToolError(f"Workshop source changed while it was being hashed: {pack}")
     return {"name": pack.name, "path": str(pack), "size": stat.st_size,
-            "mtime_ns": stat.st_mtime_ns, "sha256": sha256_path(pack), "pack_type": pack_type,
+            "mtime_ns": stat.st_mtime_ns, "device": stat.st_dev, "inode": stat.st_ino,
+            "sha256": digest, "pack_type": pack_type,
             "optional": pack.name.casefold() not in {name.casefold() for _, name in CANONICAL_PACKS}}
 
 
@@ -1099,13 +1150,33 @@ end
 \tsvr:SaveBool("SBOOL_Hardcoded_Limits_Modified", true);
 end
 '''
-        if data.count(function_old) != 1:
+        accepted_old = b'DISCLAIMER_ACCEPTED = svr:LoadBool("SBOOL_Hardcoded_Limits_Modified") or false;'
+        accepted_new = b'DISCLAIMER_ACCEPTED = true; -- macOS runtime patch supplies ten slots automatically.'
+        show_guard_old = b'\t\tif not DISCLAIMER_ACCEPTED then'
+        show_guard_new = b'\t\tif true then -- macOS: always suppress the obsolete Windows helper UI.'
+        button_declaration = (
+            b'\t\t\t\tlocal button_disclaimer_uic = '
+            b'UIComponent(main_settlement_panel_uic:Find("button_disclaimer"));'
+        )
+        button_declaration_hidden = button_declaration + b'\n\t\t\t\tbutton_disclaimer_uic:SetVisible(false);'
+        show_button_old = b'button_disclaimer_uic:SetVisible(true);'
+        show_button_new = b'button_disclaimer_uic:SetVisible(false);'
+        shape = (
+            data.count(function_old), data.count(accepted_old), data.count(show_guard_old),
+            data.count(button_declaration), data.count(show_button_old),
+        )
+        if shape != (1, 1, 1, 1, 4):
             raise ToolError(
                 "unexpected MK1212 slot script shape; refusing a partial Lua compatibility edit"
             )
         data = data.replace(function_old, function_new)
+        data = data.replace(accepted_old, accepted_new)
+        data = data.replace(show_guard_old, show_guard_new)
+        data = data.replace(button_declaration, button_declaration_hidden)
+        data = data.replace(show_button_old, show_button_new)
         return data, [
-            "replaced the Windows-only ten-slot executable call with a safe macOS no-op"
+            "replaced the Windows-only ten-slot executable call with a safe macOS no-op",
+            "kept the obsolete Windows ten-slot button and popup hidden",
         ]
 
     if relative_folded != "lua_scripts/frontend_scripted.lua":
@@ -1203,7 +1274,8 @@ def verify_profile(profile: dict) -> list[str]:
 
 
 def build_profile_cache(state_dir: Path, game_root: Path, records: list[dict],
-                        prepared: tuple[list[dict], dict[str, tuple[Path, PackEntry]]] | None = None) -> dict:
+                        prepared: tuple[list[dict], dict[str, tuple[Path, PackEntry]]] | None = None,
+                        progress: Callable[[str], None] | None = None) -> dict:
     key = profile_key(records)
     cache_root = game_root / "TotalWarAttilaData/.mk1212-cache/profiles"
     profile_dir = cache_root / key
@@ -1215,6 +1287,8 @@ def build_profile_cache(state_dir: Path, game_root: Path, records: list[dict],
         raise ToolError(f"stale profile staging directory exists: {staging}")
     staging.mkdir()
     packs = [Path(record["path"]) for record in records]
+    if progress:
+        progress(f"Inspecting {len(packs)} packs for the {key} cache profile")
     plan, lua_winners = prepared if prepared is not None else plan_compatibility(game_root, packs)
     profile = {"key": key, "created_at": utc_now(), "cache_dir": str(profile_dir),
                "pack_names": [record["name"] for record in records], "source_packs": records,
@@ -1224,8 +1298,10 @@ def build_profile_cache(state_dir: Path, game_root: Path, records: list[dict],
     try:
         pack_dir = staging / "packs"
         pack_dir.mkdir()
-        for item in plan:
+        for index, item in enumerate(plan, start=1):
             source = item["source"]
+            if progress:
+                progress(f"Cloning pack {index}/{len(plan)}: {source.name}")
             content = pack_dir / item["content_name"]
             write_content_clone(source, content, item["metadata"], item["entries"], item["repairs"])
             os.chmod(content, 0o444)
@@ -1245,7 +1321,9 @@ def build_profile_cache(state_dir: Path, game_root: Path, records: list[dict],
                                                    "path": repair["entry"].relative_path,
                                                    "reason": repair["reason"],
                                                    "disabled_path": repair["disabled_path"]})
-        for _, (source, entry) in sorted(lua_winners.items()):
+        for index, (_, (source, entry)) in enumerate(sorted(lua_winners.items()), start=1):
+            if progress and (index == 1 or index % 25 == 0 or index == len(lua_winners)):
+                progress(f"Extracting winning Lua files: {index}/{len(lua_winners)}")
             destination = safe_destination(staging / "lua", entry.relative_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
             with source.open("rb") as stream:
@@ -1274,17 +1352,17 @@ def build_profile_cache(state_dir: Path, game_root: Path, records: list[dict],
     failures = verify_profile(profile)
     if failures:
         raise ToolError("new profile cache verification failed:\n  " + "\n  ".join(failures))
+    if progress:
+        progress(f"Cache profile {key} is complete and verified")
     return profile
 
 
 def records_for_names(state: dict, names: list[str]) -> list[dict]:
-    wanted = {name.casefold() for name in names}
-    result = [record for record in state["source_packs"] if record["name"].casefold() in wanted]
-    if len(result) != len(wanted):
-        found = {record["name"].casefold() for record in result}
-        missing = [name for name in names if name.casefold() not in found]
+    by_name = {record["name"].casefold(): record for record in state["source_packs"]}
+    missing = [name for name in names if name.casefold() not in by_name]
+    if missing:
         raise ToolError("profile sources are missing: " + ", ".join(missing))
-    return result
+    return [by_name[name.casefold()] for name in names]
 
 
 def ensure_profile(state_dir: Path, state: dict, names: list[str]) -> dict:
@@ -1729,6 +1807,175 @@ def verify_command(args: argparse.Namespace) -> None:
               f"and the {location} live tree ({result['mode']}).")
 
 
+def changed_source_records(state: dict) -> list[dict]:
+    changed = []
+    for record in state["source_packs"]:
+        path = Path(record["path"])
+        if not path.is_file():
+            changed.append(record)
+            continue
+        stat = path.stat()
+        if (stat.st_size != record["size"] or stat.st_mtime_ns != record["mtime_ns"] or
+                ("device" in record and stat.st_dev != record["device"]) or
+                ("inode" in record and stat.st_ino != record["inode"])):
+            changed.append(record)
+    return changed
+
+
+def confirm_source_rebuild(records: list[dict]) -> bool:
+    names = [record["name"] for record in records[:8]]
+    if len(records) > len(names):
+        names.append(f"and {len(records) - len(names)} more")
+    message = ("Workshop files changed since this profile was prepared:\n\n" +
+               "\n".join(names) +
+               "\n\nRebuild the compatibility cache from the current files? "
+               "This may take a few minutes; progress notifications will appear.")
+    script = '''on run argv
+try
+    display dialog (item 1 of argv) with title "MK1212 Mac Launcher" buttons {"Cancel", "Rebuild Cache"} default button "Rebuild Cache" cancel button "Cancel"
+    return "REBUILD"
+on error number -128
+    return "CANCEL"
+end try
+end run'''
+    result = subprocess.run(["/usr/bin/osascript", "-e", script, "--", message],
+                            capture_output=True, text=True)
+    return result.returncode == 0 and result.stdout.strip() == "REBUILD"
+
+
+def load_resumable_orphan_profile(cache_root: Path, records: list[dict]) -> dict | None:
+    """Reuse a complete profile left on disk before the state ledger was saved."""
+    key = profile_key(records)
+    profile_dir = cache_root / key
+    if not profile_dir.exists() and not profile_dir.is_symlink():
+        return None
+    if profile_dir.is_symlink() or not profile_dir.is_dir():
+        raise ToolError(f"unregistered cache path is not a normal directory; preserving it: {profile_dir}")
+    profile_path = profile_dir / "profile.json"
+    if not profile_path.is_file():
+        raise ToolError(f"unregistered cache is incomplete and was preserved for inspection: {profile_dir}")
+    try:
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ToolError(f"unregistered cache metadata is unreadable and was preserved: {profile_path}") from exc
+
+    source_fields = ("name", "path", "size", "mtime_ns", "sha256", "pack_type", "optional")
+    expected_sources = [{field: record.get(field) for field in source_fields} for record in records]
+    actual_sources = [{field: record.get(field) for field in source_fields}
+                      for record in profile.get("source_packs", [])]
+    if (profile.get("key") != key or profile.get("pack_names") != [r["name"] for r in records] or
+            profile.get("compatibility_revision") != PROFILE_COMPATIBILITY_REVISION or
+            actual_sources != expected_sources or
+            Path(profile.get("cache_dir", "")).resolve() != profile_dir.resolve()):
+        raise ToolError(f"unregistered cache does not match current sources; preserving it: {profile_dir}")
+    failures = verify_profile(profile)
+    if failures:
+        raise ToolError("unregistered cache failed verification and was preserved:\n  " +
+                        "\n  ".join(failures[:12]))
+    return profile
+
+
+def rebuild_profiles_for_current_sources(state_dir: Path, state: dict) -> None:
+    """Refresh selected and core caches, reusing verified output after interruption."""
+    progress = lambda message, notify=False: report_rebuild_progress(state_dir, message, notify)
+    current_sources = state["source_packs"]
+    progress(f"Checking {len(current_sources)} Workshop source files", notify=True)
+    new_sources = []
+    changed_count = 0
+    for index, old_record in enumerate(current_sources, start=1):
+        path = Path(old_record["path"])
+        if not path.is_file():
+            raise ToolError(f"Workshop source is missing; resubscribe before rebuilding: {path}")
+        stat = path.stat()
+        same_file = (("device" not in old_record or stat.st_dev == old_record["device"]) and
+                     ("inode" not in old_record or stat.st_ino == old_record["inode"]))
+        unchanged = (same_file and stat.st_size == old_record["size"] and
+                     stat.st_mtime_ns == old_record["mtime_ns"])
+        if unchanged:
+            new_sources.append(dict(old_record))
+            progress(f"Workshop sources checked: {index}/{len(current_sources)} ({path.name} unchanged)")
+            continue
+        changed_count += 1
+        progress(f"Hashing updated Workshop source {changed_count}: {path.name}", notify=True)
+        metadata, _ = read_pack(path)
+        if metadata["pack_type"] not in (3, 4):
+            raise ToolError(f"updated Workshop source has unsupported pack type: {path}")
+        new_sources.append(source_record(
+            path, metadata["pack_type"],
+            progress=lambda detail, name=path.name: progress(
+                f"{name}: {detail}",
+                notify=any(detail.endswith(f": {percent}%") for percent in (25, 50, 75, 100)),
+            ),
+        ))
+
+    if not changed_count:
+        progress("No changed source files needed refreshing")
+    names = selected_names(state, state.get("selected_optional_packs", optional_pack_names(state)))
+    source_by_name = {record["name"].casefold(): record for record in new_sources}
+    try:
+        selected = [source_by_name[name.casefold()] for name in names]
+        core = [record for record in new_sources if not record["optional"]]
+    except KeyError as exc:
+        raise ToolError(f"selected pack is missing from the source inventory: {exc.args[0]}") from exc
+
+    profiles = dict(state.get("profiles", {}))
+    cache_root = Path(state["game_root"]) / "TotalWarAttilaData/.mk1212-cache/profiles"
+
+    def prepare(records: list[dict], label: str) -> dict:
+        key = profile_key(records)
+        cached = profiles.get(key)
+        if cached is not None:
+            progress(f"Verifying saved {label} cache", notify=True)
+            failures = verify_profile(cached)
+            if failures:
+                raise ToolError("existing profile cache verification failed:\n  " +
+                                "\n  ".join(failures[:12]))
+            progress(f"Reused saved {label} cache")
+            return cached
+        orphan = load_resumable_orphan_profile(cache_root, records)
+        if orphan is not None:
+            progress(f"Resuming: found and verified completed {label} cache {key}", notify=True)
+            profiles[key] = orphan
+            return orphan
+        progress(f"Building {label} compatibility cache {key}", notify=True)
+        profile = build_profile_cache(
+            state_dir, Path(state["game_root"]), records,
+            progress=lambda message: progress(f"{label}: {message}"),
+        )
+        profiles[profile["key"]] = profile
+        return profile
+
+    try:
+        selected_profile = prepare(selected, "selected")
+        core_profile = prepare(core, "core")
+        progress("Checking that Workshop packs stayed unchanged during the rebuild", notify=True)
+        for index, record in enumerate(new_sources, start=1):
+            path = Path(record["path"])
+            stat = path.stat()
+            if (stat.st_size != record["size"] or stat.st_mtime_ns != record["mtime_ns"] or
+                    ("device" in record and stat.st_dev != record["device"]) or
+                    ("inode" in record and stat.st_ino != record["inode"])):
+                raise ToolError(f"Workshop source changed during rebuild; retry after it finishes updating: {path}")
+            if index % 4 == 0 or index == len(new_sources):
+                progress(f"Workshop stability check: {index}/{len(new_sources)}")
+
+        updated = dict(state)
+        updated["source_packs"] = new_sources
+        updated["profiles"] = profiles
+        updated["default_profile_key"] = selected_profile["key"]
+        updated["core_profile_key"] = core_profile["key"]
+        updated["rebuilt_at"] = utc_now()
+        progress("Saving the refreshed cache ledger", notify=True)
+        save_json(state_dir / "state.json", updated)
+        state.clear()
+        state.update(updated)
+        progress("Workshop cache refresh complete; the submod selector will open next", notify=True)
+    except Exception as exc:
+        progress(f"Refresh paused before the state file was updated: {exc}. "
+                 "Completed cache folders were preserved for resume.", notify=True)
+        raise
+
+
 def uninstall_command(args: argparse.Namespace) -> None:
     if game_running():
         raise ToolError("ATTILA is running; uninstall is refused")
@@ -1782,39 +2029,6 @@ def configure_command(args: argparse.Namespace) -> None:
     print(f"Prepared profile {profile['key']} with {len(profile['pack_names'])} packs.")
 
 
-def native_patch_command(args: argparse.Namespace) -> None:
-    if game_running():
-        raise ToolError("ATTILA is running; native clone creation is refused")
-    state_dir = Path(args.state_dir).expanduser().resolve()
-    state = load_state(state_dir)
-    if state.get("status") != "prepared":
-        raise ToolError(f"state is {state.get('status')!r}, not prepared")
-    recover_stale_activation(state_dir, state)
-    if state.get("native_slot_clone", {}).get("status") == "ready":
-        existing_app = Path(state["native_slot_clone"].get("clone_app", ""))
-        expected_app = Path(state["game_root"]) / NATIVE_CLONE_DIRNAME
-        if existing_app.resolve() != expected_app.resolve():
-            old_root = state_dir / "native-clone"
-            if existing_app.resolve() != (old_root / NATIVE_CLONE_DIRNAME).resolve():
-                raise ToolError(f"refusing unexpected old native clone path: {existing_app}")
-            if old_root.exists():
-                shutil.rmtree(old_root)
-            state.pop("native_slot_clone", None)
-            save_json(state_dir / "state.json", state)
-            print("Migrated the generated clone location into the Steam game directory.")
-        else:
-            data_link = ensure_native_clone_data_link(state_dir, state)
-            state["native_slot_clone"]["data_root_link"] = str(data_link)
-            save_json(state_dir / "state.json", state)
-            verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
-            print("Repaired native clone data-directory link: " + str(data_link))
-            return
-    verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
-    result = build_native_clone(state_dir, state)
-    print("Prepared locally signed ten-slot clone: " + result["clone_app"])
-    print("The original Steam/Feral app remains unchanged and is still used for vanilla launches.")
-
-
 def launch_command(args: argparse.Namespace) -> None:
     if game_running():
         raise ToolError("ATTILA is already running; launch is refused")
@@ -1824,18 +2038,30 @@ def launch_command(args: argparse.Namespace) -> None:
         raise ToolError(f"state is {state.get('status')!r}, not prepared")
     recover_stale_activation(state_dir, state)
     refresh_optional_sources(state)
+    changed = changed_source_records(state)
+    if changed:
+        if not confirm_source_rebuild(changed):
+            print("Workshop cache rebuild cancelled.")
+            return
+        rebuild_profiles_for_current_sources(state_dir, state)
     verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
     if args.core_only:
         picked = []
     elif args.no_picker:
         picked = state.get("selected_optional_packs", optional_pack_names(state))
     else:
+        report_rebuild_progress(state_dir, "Opening the optional submod selector", notify=True)
         choice = choose_optional_packs(state)
         if choice is None:
+            report_rebuild_progress(
+                state_dir, "Submod selection cancelled; ATTILA was not launched", notify=True,
+            )
             print("Launch cancelled.")
             return
         state["optional_load_order"] = choice["order"]
         picked = choice["selected"]
+        report_rebuild_progress(state_dir, "Submod selection confirmed; preparing ATTILA launch",
+                                notify=True)
     state["selected_optional_packs"] = picked
     names = selected_names(state, picked)
     if profile_key(records_for_names(state, names)) not in state.get("profiles", {}):
@@ -1844,24 +2070,45 @@ def launch_command(args: argparse.Namespace) -> None:
     save_json(state_dir / "state.json", state)
     game_root = Path(state["game_root"])
     original_executable = game_root / EXECUTABLE_RELATIVE
-    native = state.get("native_slot_clone")
-    # The executable clone is quarantined and deliberately not part of the
-    # supported compatibility path.  The signed Feral binary remains the
-    # only executable used by the launcher.
     executable = original_executable
     if not executable.is_file():
         raise ToolError(f"selected ATTILA executable is missing: {executable}")
+    executable_sha256 = sha256_path(executable)
+    if executable_sha256 != SUPPORTED_RUNTIME_EXECUTABLE_SHA256:
+        raise ToolError(
+            "the ten-slot runtime patch supports only Feral ATTILA 1.6.1 build 480285.103778; "
+            f"found executable SHA-256 {executable_sha256}"
+        )
+    runtime_library = Path(__file__).resolve().with_name("libmk1212-slot-runtime-patch.dylib")
+    if not runtime_library.is_file():
+        # Source-tree commands use the reproducible build output; packaged apps
+        # carry the same signed library beside this Python module.
+        development_library = Path(__file__).resolve().parents[1] / "build/libmk1212-slot-runtime-patch.dylib"
+        if development_library.is_file():
+            runtime_library = development_library
+    if not runtime_library.is_file():
+        raise ToolError(f"ten-slot runtime patch library is missing: {runtime_library}")
+    signature = subprocess.run(
+        ["/usr/bin/codesign", "--verify", "--strict", str(runtime_library)],
+        capture_output=True, text=True,
+    )
+    if signature.returncode != 0:
+        raise ToolError("ten-slot runtime patch library signature is invalid: " + signature.stderr.strip())
     home = prepare_isolated_home(state_dir)
     activation = activate_profile(state_dir, state, profile)
     log_dir = state_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log = log_dir / f"launch-{datetime.now().strftime('%Y%m%dT%H%M%S')}.json"
+    launch_stamp = datetime.now().strftime('%Y%m%dT%H%M%S')
+    log = log_dir / f"launch-{launch_stamp}.json"
+    patch_log = log_dir / f"ten-slot-runtime-patch-{launch_stamp}.log"
     payload = {"tool_version": TOOL_VERSION, "launched_at": utc_now(), "executable": str(executable),
-               "executable_sha256": sha256_path(executable), "cwd": str(game_root / "TotalWarAttilaData"),
+               "executable_sha256": executable_sha256, "cwd": str(game_root / "TotalWarAttilaData"),
                "original_executable": str(original_executable),
                "original_executable_sha256": sha256_path(original_executable),
-               "native_slot_clone": native, "argv": [str(executable)], "isolated_home": str(home),
+               "argv": [str(executable)], "isolated_home": str(home),
                "feral_app_unchanged": True,
+               "ten_slot_runtime_patch_library": str(runtime_library),
+               "ten_slot_runtime_patch_log": str(patch_log),
                "profile_key": profile["key"], "pack_names": profile["pack_names"],
                "optional_packs": picked, "dds_repairs": profile["dds_repairs"],
                "lua_repairs": profile.get("lua_repairs", []),
@@ -1870,6 +2117,8 @@ def launch_command(args: argparse.Namespace) -> None:
     environment = os.environ.copy()
     environment["CFFIXED_USER_HOME"] = str(home)
     environment["MK1212_MAC_SLOT_LOG"] = str(log_dir / "slot-diagnostic.log")
+    environment["MK1212_MAC_SLOT_PATCH_LOG"] = str(patch_log)
+    environment["DYLD_INSERT_LIBRARIES"] = str(runtime_library)
     environment.setdefault("SteamAppId", APP_ID)
     environment.setdefault("SteamGameId", APP_ID)
     child = None
@@ -1889,7 +2138,17 @@ def launch_command(args: argparse.Namespace) -> None:
             child.wait()
         deactivate_profile(state_dir, state, activation)
     if return_code != 0:
-        raise ToolError(f"ATTILA exited with status {return_code}; transient compatibility files were removed")
+        patch_result = patch_log.read_text(errors="replace").strip() if patch_log.is_file() else "no patch log"
+        raise ToolError(
+            f"ATTILA exited with status {return_code}; transient compatibility files were removed. "
+            f"Ten-slot patch report: {patch_result}"
+        )
+    patch_result = patch_log.read_text(errors="replace").strip() if patch_log.is_file() else ""
+    if "status=patched-6-to-10 kern_return=0" not in patch_result:
+        raise ToolError(
+            "ATTILA exited, but the ten-slot runtime patch did not report success; "
+            f"inspect {patch_log}"
+        )
 
 
 def make_parser() -> argparse.ArgumentParser:
@@ -1902,8 +2161,6 @@ def make_parser() -> argparse.ArgumentParser:
     verify = sub.add_parser("verify"); verify.add_argument("--quick", action="store_true"); verify.add_argument("--json", action="store_true"); verify.set_defaults(func=verify_command)
     uninstall = sub.add_parser("uninstall"); uninstall.set_defaults(func=uninstall_command)
     configure = sub.add_parser("configure"); configure.set_defaults(func=configure_command)
-    native_patch = sub.add_parser("native-patch", help="build a locally signed ten-slot ATTILA clone")
-    native_patch.set_defaults(func=native_patch_command)
     launch = sub.add_parser("launch")
     launch.add_argument("--no-picker", action="store_true", help="reuse the last optional-submod selection")
     launch.add_argument("--core-only", action="store_true", help="disable every optional submod for this launch")

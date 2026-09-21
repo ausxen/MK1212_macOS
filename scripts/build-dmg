@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="${0:A:h:h}"
-version="${VERSION:-0.6.1}"
+version="${VERSION:-0.7.0}"
 dist_root="$repo_root/dist"
 archive="$dist_root/MK1212_macOS-${version}.dmg"
 
@@ -14,6 +14,7 @@ fi
 build_root="$(mktemp -d /private/tmp/mk1212-dmg.XXXXXX)"
 clean_root="$(mktemp -d /private/tmp/mk1212-dmg-clean.XXXXXX)"
 rw_image="$build_root/volume-rw.dmg"
+runtime_library="$build_root/libmk1212-slot-runtime-patch.dylib"
 trap 'rm -rf "$build_root" "$clean_root"' EXIT
 
 container="$build_root/MK1212 Mac Launcher"
@@ -23,9 +24,12 @@ mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
 mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
 mkdir -p "$dist_root"
 
+"$repo_root/scripts/build-runtime-patch" "$runtime_library" >/dev/null
+
 cp "$repo_root/app/Info.plist" "$app_root/Contents/Info.plist"
 cp "$repo_root/app/launcher" "$app_root/Contents/MacOS/MK1212 Mac Launcher"
 cp "$repo_root/src/mk1212_mac_tool.py" "$app_root/Contents/Resources/mk1212_mac_tool.py"
+cp "$runtime_library" "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212MacLauncher.icns"
 
 cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plist"
@@ -36,6 +40,7 @@ cp "$repo_root/INSTALL.txt" "$container/README.txt"
 chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
 chmod 755 "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
 chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py"
+chmod 755 "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
 xattr -cr "$app_root" "$uninstaller_root"
 codesign --force --deep --sign - "$app_root"
 codesign --verify --deep --strict "$app_root"
