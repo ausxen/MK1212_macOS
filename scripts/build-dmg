@@ -14,7 +14,9 @@ fi
 build_root="$(mktemp -d /private/tmp/mk1212-dmg.XXXXXX)"
 clean_root="$(mktemp -d /private/tmp/mk1212-dmg-clean.XXXXXX)"
 rw_image="$build_root/volume-rw.dmg"
+mountpoint="$build_root/volume"
 runtime_library="$build_root/libmk1212-slot-runtime-patch.dylib"
+signing_identity="${CODESIGN_IDENTITY:--}"
 trap 'rm -rf "$build_root" "$clean_root"' EXIT
 
 container="$build_root/MK1212 Mac Launcher"
@@ -22,6 +24,7 @@ app_root="$container/MK1212 Mac Launcher.app"
 uninstaller_root="$container/Uninstall MK1212 Mac Launcher.app"
 mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
 mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
+mkdir -p "$mountpoint"
 mkdir -p "$dist_root"
 
 "$repo_root/scripts/build-runtime-patch" "$runtime_library" >/dev/null
@@ -36,15 +39,21 @@ cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plis
 cp "$repo_root/app/uninstaller/launcher" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
 cp "$repo_root/INSTALL.txt" "$container/README.txt"
+cp "$repo_root/app/Prepare MK1212 Mac Launcher.command" "$container/Prepare MK1212 Mac Launcher.command"
 
 chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
 chmod 755 "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
 chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py"
 chmod 755 "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
+chmod 755 "$container/Prepare MK1212 Mac Launcher.command"
 xattr -cr "$app_root" "$uninstaller_root"
-codesign --force --deep --sign - "$app_root"
+sign_args=(--force --deep --sign "$signing_identity")
+if [[ "$signing_identity" != "-" ]]; then
+    sign_args+=(--options runtime --timestamp)
+fi
+codesign "${sign_args[@]}" "$app_root"
 codesign --verify --deep --strict "$app_root"
-codesign --force --deep --sign - "$uninstaller_root"
+codesign "${sign_args[@]}" "$uninstaller_root"
 codesign --verify --deep --strict "$uninstaller_root"
 
 # Build from a metadata-clean copy so Finder/File Provider attributes do not
@@ -52,13 +61,14 @@ codesign --verify --deep --strict "$uninstaller_root"
 ditto --norsrc --noqtn "$container" "$clean_root/MK1212 Mac Launcher"
 ln -s /Applications "$clean_root/Applications"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$clean_root/.VolumeIcon.icns"
+cp "$repo_root/Read_Me_First.txt" "$clean_root/Read_Me_First.txt"
 
 # Custom volume icons are preserved reliably when set on a mounted writable
 # image before converting it to the compressed release image.
 hdiutil create -size 32m -fs HFS+ -volname "ausxen's MK1212 macOS Launcher" \
     -ov "$rw_image" >/dev/null
-hdiutil attach -nobrowse -noverify "$rw_image" >/dev/null
-volume="/Volumes/ausxen's MK1212 macOS Launcher"
+hdiutil attach -nobrowse -noverify -mountpoint "$mountpoint" "$rw_image" >/dev/null
+volume="$mountpoint"
 ditto --norsrc --noqtn "$clean_root/" "$volume/"
 SetFile -a C "$volume"
 hdiutil detach "$volume" >/dev/null

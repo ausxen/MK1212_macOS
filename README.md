@@ -94,22 +94,26 @@ _"I WANT IT AND I WANT IT NOW!"_
 
 1. Download `MK1212_macOS-0.7.0.dmg`.
 2. Drag the `MK1212 Mac Launcher` folder onto the Applications shortcut.
-3. Open `MK1212 Mac Launcher.app` from `/Applications/MK1212 Mac Launcher/`.
-4. Quit ATTILA completely before preparing a profile.
-5. Inspect the discovered MK1212 core and currently enabled optional packs if
+3. Open `/Applications/MK1212 Mac Launcher/` and run `Prepare MK1212 Mac Launcher.command`.
+   This removes only the downloaded-app quarantine metadata from the launcher
+   folder. Verify the DMG checksum first; the same command is documented in
+   the DMG-root `Read_Me_First.txt`.
+4. Open `MK1212 Mac Launcher.app` from `/Applications/MK1212 Mac Launcher/`.
+5. Quit ATTILA completely before preparing a profile.
+6. Inspect the discovered MK1212 core and currently enabled optional packs if
    using the command-line tools:
 
    ```sh
    ./bin/mk1212-mac-inspect
    ```
 
-6. Prepare the compatibility cache:
+7. Prepare the compatibility cache:
 
    ```sh
    ./bin/mk1212-mac-install
    ```
 
-7. Open that app, or add it to Steam as a non-Steam game. Use each checkbox to enable or disable an optional mod, and set its priority number to control submod order (1 loads first).
+8. Add the launcher app to Steam as a non-Steam game if desired. Use each checkbox to enable or disable an optional mod, and set its priority number to control submod order (1 loads first).
 
 The launcher discovers installed Workshop packs automatically. Before each
 launch, check or uncheck optional packs and set their priority numbers in the
@@ -211,8 +215,24 @@ Building from source also requires Apple's Xcode Command Line Tools for the
 ARM64 runtime library. The build creates an ad-hoc-signed app and release
 artifacts under `dist/`.
 Ad-hoc signing proves bundle integrity; it is not Apple Developer ID signing or
-notarization. GitHub downloads may require the user to approve the app in
-macOS Privacy & Security.
+notarization. Because this community build has no Apple Developer ID
+certificate, a browser download may receive a quarantine flag and show
+“Apple could not verify … free of malware.” After confirming the DMG checksum,
+remove that user-download flag once and launch the app:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/MK1212 Mac Launcher"
+open "/Applications/MK1212 Mac Launcher/MK1212 Mac Launcher.app"
+```
+
+Alternatively, use macOS Privacy & Security’s **Open Anyway** control after a
+user-initiated launch attempt. Do not use this for an unverified copy; verify
+the release checksum first.
+
+Maintainers with a Developer ID Application certificate can set
+`CODESIGN_IDENTITY="Developer ID Application: …"` while building. Eliminating
+the warning for general downloads additionally requires Apple notarization and
+stapling, which cannot be performed without that account and certificate.
 
 ## Give Me DMG
 

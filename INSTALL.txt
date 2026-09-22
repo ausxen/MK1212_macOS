@@ -15,5 +15,10 @@ Release 0.7.0 enables ten-slot settlements automatically on the supported
 ARM64 Feral ATTILA 1.6.1 build. It patches only the running process; it does not
 edit or re-sign the installed Feral application.
 
+This community release is ad-hoc signed, not Apple-notarized. After verifying
+the DMG checksum, if macOS reports that Apple could not verify the app, run:
+
+    xattr -dr com.apple.quarantine "/Applications/MK1212 Mac Launcher"
+
 The launcher does not include Total War: ATTILA or Workshop content. Users must
 own the game and subscribe to the required Workshop packs separately.

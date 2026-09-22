@@ -17,6 +17,7 @@ release_root="$build_root/MK1212 Mac Launcher v${version}"
 app_root="$release_root/MK1212 Mac Launcher.app"
 uninstaller_root="$release_root/Uninstall MK1212 Mac Launcher.app"
 runtime_library="$build_root/libmk1212-slot-runtime-patch.dylib"
+signing_identity="${CODESIGN_IDENTITY:--}"
 
 mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
 mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
@@ -32,6 +33,7 @@ cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212M
 cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plist"
 cp "$repo_root/app/uninstaller/launcher" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
+cp "$repo_root/app/Prepare MK1212 Mac Launcher.command" "$release_root/Prepare MK1212 Mac Launcher.command"
 cp "$repo_root/src/mk1212_mac_tool.py" "$release_root/src/mk1212_mac_tool.py"
 cp "$repo_root/src/mk1212_slot_runtime_patch.c" "$release_root/src/mk1212_slot_runtime_patch.c"
 cp "$repo_root/bin/"mk1212-mac-* "$release_root/bin/"
@@ -41,11 +43,16 @@ chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
 chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py" "$release_root/src/mk1212_mac_tool.py"
 chmod 755 "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
 chmod 755 "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
+chmod 755 "$release_root/Prepare MK1212 Mac Launcher.command"
 chmod 755 "$release_root/bin/"mk1212-mac-*
 xattr -cr "$app_root" "$uninstaller_root"
-codesign --force --deep --sign - "$app_root"
+sign_args=(--force --deep --sign "$signing_identity")
+if [[ "$signing_identity" != "-" ]]; then
+    sign_args+=(--options runtime --timestamp)
+fi
+codesign "${sign_args[@]}" "$app_root"
 codesign --verify --deep --strict --verbose=2 "$app_root"
-codesign --force --deep --sign - "$uninstaller_root"
+codesign "${sign_args[@]}" "$uninstaller_root"
 codesign --verify --deep --strict --verbose=2 "$uninstaller_root"
 
 ditto -c -k --norsrc --keepParent "$release_root" "$archive"

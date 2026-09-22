@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="${0:A:h:h}"
 output="${1:-$repo_root/build/libmk1212-slot-runtime-patch.dylib}"
+signing_identity="${CODESIGN_IDENTITY:--}"
 
 mkdir -p "${output:h}"
 /usr/bin/xcrun clang \
@@ -14,6 +15,10 @@ mkdir -p "${output:h}"
     "$repo_root/src/mk1212_slot_runtime_patch.c" \
     -o "$output"
 
-/usr/bin/codesign --force --sign - "$output"
+sign_args=(--force --sign "$signing_identity")
+if [[ "$signing_identity" != "-" ]]; then
+    sign_args+=(--options runtime --timestamp)
+fi
+/usr/bin/codesign "${sign_args[@]}" "$output"
 /usr/bin/codesign --verify --strict "$output"
 print "$output"
