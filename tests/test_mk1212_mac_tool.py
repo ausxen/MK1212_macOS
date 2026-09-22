@@ -244,7 +244,7 @@ class TransientProfileTests(unittest.TestCase):
         self.assertEqual(patched.count(b"popup_list_uic:SetVisible(true);"), 1)
         self.assertEqual(len(repairs), 1)
 
-    def test_macos_slot_windows_process_patcher_is_replaced_with_noop(self):
+    def test_macos_slot_helper_ui_is_removed_but_listener_entry_point_remains(self):
         source_pack = Path(
             "/Users/austen/Library/Application Support/Steam/steamapps/workshop/content/325610/1934544571/1-1212scripts.pack"
         )
@@ -258,15 +258,31 @@ class TransientProfileTests(unittest.TestCase):
         with source_pack.open("rb") as stream:
             original = tool.read_entry(stream, entry)
         patched, repairs = tool.apply_lua_compatibility(entry.relative_path, original)
-        self.assertNotIn(b'io.open("MK1212_10slots.exe"', patched)
-        self.assertNotIn(b'os.execute(command)', patched)
-        self.assertIn(b'macOS runtime patch supplies ten slots automatically', patched)
-        self.assertIn(b'Windows-only. Never extract or execute it on macOS.', patched)
-        self.assertIn(b'CreateDisclaimerPrompt();', patched)
-        self.assertNotIn(b'button_disclaimer_uic:SetVisible(true);', patched)
-        self.assertGreaterEqual(patched.count(b'button_disclaimer_uic:SetVisible(false);'), 5)
-        self.assertIn(b'always suppress the obsolete Windows helper UI', patched)
-        self.assertEqual(len(repairs), 2)
+        self.assertIn(b'function Add_MK1212_Slots_Listeners()', patched)
+        self.assertIn(b'UIComponent(button_found):SetVisible(false)', patched)
+        self.assertNotIn(b'CreateComponent', patched)
+        self.assertNotIn(b'ComponentLClickUp', patched)
+        self.assertNotIn(b'SimulateClick', patched)
+        self.assertNotIn(b'MK1212_10slots.exe', patched)
+        self.assertNotIn(b'os.execute', patched)
+        self.assertEqual(len(repairs), 1)
+
+    def test_frontend_windows_helper_prompt_is_not_constructed(self):
+        source_pack = Path(
+            "/Users/austen/Library/Application Support/Steam/steamapps/workshop/content/325610/1934544571/1-1212scripts.pack"
+        )
+        if not source_pack.is_file():
+            self.skipTest("local MK1212 Scripts pack is unavailable")
+        _, entries = tool.read_pack(source_pack)
+        entry = next(item for item in entries
+                     if item.relative_path.casefold() == "lua_scripts/frontend_disclaimer.lua")
+        with source_pack.open("rb") as stream:
+            original = tool.read_entry(stream, entry)
+        patched, repairs = tool.apply_lua_compatibility(entry.relative_path, original)
+        self.assertNotIn(b'CreateComponent', patched)
+        self.assertNotIn(b'add_listener', patched)
+        self.assertNotIn(b'MK1212_10slots.exe', patched)
+        self.assertEqual(len(repairs), 1)
 
     def test_appdata_paths_are_left_unchanged_pending_a_b_test(self):
         source = (

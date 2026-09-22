@@ -1,3 +1,10 @@
+# BUG NOTICE 2026-09-22
+
+There is currently a bug affecting version 0.7.0
+
+I am working on fixing it; in the meantime download version 0.6.1 from `dist/old/`
+
+
 # ausxen's MK1212 macOS Launcher
 
 [_Reading is for geeks, just give me the launcher._](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.7.0.dmg)

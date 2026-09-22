@@ -32,7 +32,7 @@ from typing import BinaryIO, Callable, Iterable
 
 APP_ID = "325610"
 TOOL_VERSION = "0.7.0"
-PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-hide-windows-ui-v2"
+PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-no-windows-helper-ui-v3"
 SUPPORTED_RUNTIME_EXECUTABLE_SHA256 = (
     "13f5d523019f291f489353fa5d3661bc9a668bb2b0375d6c3201e01d74525c5e"
 )
@@ -1114,70 +1114,46 @@ def apply_lua_compatibility(relative_path: str, data: bytes) -> tuple[bytes, lis
     the requested parent bounds while preserving the authored child bounds.
     """
     relative_folded = relative_path.casefold()
-    if relative_folded == "campaigns/main_attila/mk1212_slots.lua":
-        function_old = b'''function ModifyHardcodedLimits()
-\tDISCLAIMER_ACCEPTED = true;
-
-\t--if not util.fileExists("MK1212_10slots.exe") then
-\t\trequire("lua_scripts/slots_binaries");
-
-\t\tlocal slotsFile = io.open("MK1212_10slots.exe", "wb");
-\t\tlocal binary = "";
-\t\t\t
-\t\tfor i = 1, #slots_binaries do
-\t\t\tlocal number = tonumber("0x"..slots_binaries[i]);
-\t\t\tlocal char = string.char(number);
-
-\t\t\tbinary = binary..char;
-\t\tend
-
-\t\tslotsFile:write(binary);
-\t\tslotsFile:close();
-\t--end
-
-\tlocal command = "MK1212_10slots.exe";
-
-\tos.execute(command);
-
-\tsvr:SaveBool("SBOOL_Prompt_Already_Shown", true);
-\tsvr:SaveBool("SBOOL_Hardcoded_Limits_Modified", true);
-end
-'''
-        function_new = b'''function ModifyHardcodedLimits()
-\t-- The bundled helper is Windows-only. Never extract or execute it on macOS.
-\tDISCLAIMER_ACCEPTED = true;
-\tsvr:SaveBool("SBOOL_Prompt_Already_Shown", true);
-\tsvr:SaveBool("SBOOL_Hardcoded_Limits_Modified", true);
-end
-'''
-        accepted_old = b'DISCLAIMER_ACCEPTED = svr:LoadBool("SBOOL_Hardcoded_Limits_Modified") or false;'
-        accepted_new = b'DISCLAIMER_ACCEPTED = true; -- macOS runtime patch supplies ten slots automatically.'
-        show_guard_old = b'\t\tif not DISCLAIMER_ACCEPTED then'
-        show_guard_new = b'\t\tif true then -- macOS: always suppress the obsolete Windows helper UI.'
-        button_declaration = (
-            b'\t\t\t\tlocal button_disclaimer_uic = '
-            b'UIComponent(main_settlement_panel_uic:Find("button_disclaimer"));'
-        )
-        button_declaration_hidden = button_declaration + b'\n\t\t\t\tbutton_disclaimer_uic:SetVisible(false);'
-        show_button_old = b'button_disclaimer_uic:SetVisible(true);'
-        show_button_new = b'button_disclaimer_uic:SetVisible(false);'
-        shape = (
-            data.count(function_old), data.count(accepted_old), data.count(show_guard_old),
-            data.count(button_declaration), data.count(show_button_old),
-        )
-        if shape != (1, 1, 1, 1, 4):
-            raise ToolError(
-                "unexpected MK1212 slot script shape; refusing a partial Lua compatibility edit"
-            )
-        data = data.replace(function_old, function_new)
-        data = data.replace(accepted_old, accepted_new)
-        data = data.replace(show_guard_old, show_guard_new)
-        data = data.replace(button_declaration, button_declaration_hidden)
-        data = data.replace(show_button_old, show_button_new)
-        return data, [
-            "replaced the Windows-only ten-slot executable call with a safe macOS no-op",
-            "kept the obsolete Windows ten-slot button and popup hidden",
+    if relative_folded == "lua_scripts/frontend_disclaimer.lua":
+        # This entire frontend file exists to offer/run the Windows helper.
+        # No other MK1212 Lua calls its functions.  The native patch is applied
+        # before the game starts, so do not register its events or create a UI.
+        if sha256_bytes(data) != "34cca8fb4cee6d0a53c5b1a78b3a2ab60214f3d9c2a58caf33610b6473908b4d":
+            raise ToolError("unexpected MK1212 frontend disclaimer script; refusing an unsafe replacement")
+        return b"-- macOS: native ten-slot support needs no Windows helper prompt.\n", [
+            "disabled the Windows-only frontend executable prompt and its listeners",
         ]
+    if relative_folded == "campaigns/main_attila/mk1212_slots.lua":
+        if sha256_bytes(data) != "6baa1d7dc93d0ad4fdf38308d91fb6cdd7fa9851ac44344809368ab9ec64cda5":
+            raise ToolError("unexpected MK1212 campaign slot script; refusing an unsafe replacement")
+        # The original file implements only the Windows executable prompt.
+        # mk1212_start.lua calls Add_MK1212_Slots_Listeners(), so retain that
+        # entry point. The separate native library supplies ten functional
+        # slots; this script only hides the obsolete layout-owned button.
+        return b'''-- MK1212 macOS: the native runtime patch supplies ten settlement slots.
+-- Keep the original listener entry point without constructing the Windows UI.
+function Add_MK1212_Slots_Listeners()
+    cm:add_listener("MK1212_Hide_Windows_Button_OnPanel", "PanelOpenedCampaign", true,
+        function(context) cm:add_time_trigger("MK1212_Hide_Windows_Button", 0.1) end, true);
+    cm:add_listener("MK1212_Hide_Windows_Button_OnSettlement", "SettlementSelected", true,
+        function(context) cm:add_time_trigger("MK1212_Hide_Windows_Button", 0.1) end, true);
+    cm:add_listener("MK1212_Hide_Windows_Button_OnTimer", "TimeTrigger",
+        function(context) return context.string == "MK1212_Hide_Windows_Button" end,
+        function(context)
+            local root = cm:ui_root();
+            local panel_found = root:Find("main_settlement_panel");
+            if panel_found then
+                local panel = UIComponent(panel_found);
+                if panel:Visible() then
+                    local button_found = panel:Find("button_disclaimer");
+                    if button_found then
+                        UIComponent(button_found):SetVisible(false);
+                    end
+                end
+            end
+        end, true);
+end
+''', ["removed the Windows-only slot dialog and click handler; hide its layout button on settlement events"]
 
     if relative_folded != "lua_scripts/frontend_scripted.lua":
         return data, []
