@@ -1,8 +1,10 @@
-# BUG NOTICE 2026-09-22
+# BUG NOTICE 2026-09-22 (updated 2026-09-27)
 
 There is currently a bug affecting version 0.7.0
 
 I am working on fixing it; in the meantime download version 0.6.1 from `dist/old/`
+
+**If you want to help out with de-bugging the 10-slot fix, Robonios worked on [a great analysis on their GitHub page](https://github.com/Robonios/mk1212-attila-macos).**
 
 
 # ausxen's MK1212 macOS Launcher
