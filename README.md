@@ -1,6 +1,6 @@
 # ausxen's MK1212 macOS Launcher
 
-[_Reading is for geeks, just give me the launcher._](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.8.0.dmg)
+[_Reading is for geeks, just give me the launcher._](https://github.com/ausxen/MK1212_macOS/releases/latest/download/MK1212-Mac-Launcher.dmg)
 
 ## Table of Contents
 
@@ -103,7 +103,7 @@ The launcher checks `/usr/bin/python3`, Apple Silicon Homebrew, then Intel Homeb
 
 _"I WANT IT AND I WANT IT NOW!"_
 
-1. Download `MK1212_macOS-0.8.0.dmg`.
+1. Download `MK1212-Mac-Launcher.dmg`.
 2. Double-click `Install MK1212 Mac Launcher.pkg` and follow the macOS Installer
    prompts. It installs the launcher in `/Applications/MK1212 Mac Launcher/`.
 3. Open `MK1212 Mac Launcher.app` from that folder.
@@ -242,9 +242,9 @@ stapling, which cannot be performed without that account and certificate.
 
 _In case you don't know how to download a file from a GitHub repo — which is fine, we're not all insufferable nerdcels who spend our lives in front of computers... though you're a Total War gamer which I'm not sure is much better._
 
-[**DOWNLOAD THE LAUNCHER!!!!** (yes this is a real link, there are no lonely milfs near you, and i don't even know what an extended warranty is)](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.8.0.dmg)
+[**DOWNLOAD THE LAUNCHER!!!!** (yes this is a real link, there are no lonely milfs near you, and i don't even know what an extended warranty is)](https://github.com/ausxen/MK1212_macOS/releases/latest/download/MK1212-Mac-Launcher.dmg)
 
-[Download the SHA-256 checksum](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.8.0.dmg.sha256)
+[Download the SHA-256 checksum](https://github.com/ausxen/MK1212_macOS/releases/latest/download/MK1212-Mac-Launcher.dmg.sha256)
 
 ## Bug Reporting
 
