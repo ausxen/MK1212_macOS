@@ -1,15 +1,6 @@
-# BUG NOTICE 2026-09-22 (updated 2026-09-27)
-
-There is currently a bug affecting version 0.7.0
-
-I am working on fixing it; in the meantime download version 0.6.1 from `dist/old/`
-
-**If you want to help out with de-bugging the 10-slot fix, Robonios worked on [a great analysis on their GitHub page](https://github.com/Robonios/mk1212-attila-macos).**
-
-
 # ausxen's MK1212 macOS Launcher
 
-[_Reading is for geeks, just give me the launcher._](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.7.0.dmg)
+[_Reading is for geeks, just give me the launcher._](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.8.0.dmg)
 
 ## Table of Contents
 
@@ -52,6 +43,8 @@ I tested it as follows:
 - macOS with Feral ATTILA 1.6.1, build `480285.103778`
 - MK1212 Scripts, Cities, Base, Models 1–9, and Music
 - Tycherious' 1212 Tweaks, Realistic Smoke, and Tycherious' 4TPY
+- Extended campaign play across many turns and battles, with multiple ten-slot
+  settlements and the submods above enabled
 
 Your mileage may vary. If it does, let me know, because I want us all to get as much mileage as possible. Gas is expensive these days.
 
@@ -67,9 +60,12 @@ _Boring list of how this thing functions._
 - Prepares ordered local type-4/movie representations in a hidden cache.
 - Uses APFS clone-on-write copies, so source Workshop packs are not edited.
 - Extracts the final load-order winner for each Lua path.
-- Shows a checkbox and editable priority for every optional submod before each launch, so unrelated mods can be disabled and MK1212 submods can be ordered.
-- Applies a narrowly guarded, memory-only ARM64 patch that changes ATTILA's two
-  six-slot limits to ten for the lifetime of the launched process.
+- Shows a foreground native window before each launch. Optional submods can be
+  enabled with checkboxes and dragged into priority order (highest first).
+- Includes built-in Help and a safe Rebuild Cache action for troubleshooting.
+- Applies a narrowly guarded, heap-only ARM64 runtime patch that changes the
+  matching settlement-slot object field from six to ten. It does not write to
+  ATTILA's executable code pages.
 - Verifies the exact Feral executable hash, Mach-O UUID, instruction context,
   library signature, and runtime success report before treating the launch as supported.
 - Hard-links the selected cached representation into the live data tree only for the supervised ATTILA session.
@@ -79,7 +75,7 @@ _Boring list of how this thing functions._
 - Keeps hash ledgers and backs up the current manifest before preparation, activation, deactivation, or uninstallation.
 - Uses an isolated Feral preference home and a controlled working directory.
 - Writes one diagnostic JSON record per launch.
-- Rebuilds changed Workshop-source caches with progress notifications and can
+- Rebuilds changed Workshop-source caches with progress recorded in the log and can
   resume from a completed cache if the launcher was interrupted before saving its ledger.
 - Recovers an interrupted activation the next time any launcher command runs.
 - Leaves normal Steam launches vanilla while the custom launcher is inactive.
@@ -101,32 +97,22 @@ The launcher checks `/usr/bin/python3`, Apple Silicon Homebrew, then Intel Homeb
 
 _"I WANT IT AND I WANT IT NOW!"_
 
-1. Download `MK1212_macOS-0.7.0.dmg`.
-2. Drag the `MK1212 Mac Launcher` folder onto the Applications shortcut.
-3. Open `/Applications/MK1212 Mac Launcher/` and run `Prepare MK1212 Mac Launcher.command`.
-   This removes only the downloaded-app quarantine metadata from the launcher
-   folder. Verify the DMG checksum first; the same command is documented in
-   the DMG-root `Read_Me_First.txt`.
-4. Open `MK1212 Mac Launcher.app` from `/Applications/MK1212 Mac Launcher/`.
-5. Quit ATTILA completely before preparing a profile.
-6. Inspect the discovered MK1212 core and currently enabled optional packs if
-   using the command-line tools:
-
-   ```sh
-   ./bin/mk1212-mac-inspect
-   ```
-
-7. Prepare the compatibility cache:
-
-   ```sh
-   ./bin/mk1212-mac-install
-   ```
-
-8. Add the launcher app to Steam as a non-Steam game if desired. Use each checkbox to enable or disable an optional mod, and set its priority number to control submod order (1 loads first).
+1. Download `MK1212_macOS-0.8.0.dmg`.
+2. Double-click `Install MK1212 Mac Launcher.pkg` and follow the macOS Installer
+   prompts. It installs the launcher in `/Applications/MK1212 Mac Launcher/`.
+3. Open `MK1212 Mac Launcher.app` from that folder.
+4. On first use, leave the foreground preparation window open while the
+   launcher builds its compatibility cache. The submod window opens when that
+   finishes.
+5. Use each checkbox to enable or disable an optional mod, and drag rows into
+   priority order (highest priority at the top). Add the launcher app to Steam
+   as a non-Steam game if desired.
 
 The launcher discovers installed Workshop packs automatically. Before each
-launch, check or uncheck optional packs and set their priority numbers in the
-selector; no submod-specific load-order file is required.
+launch, check or uncheck optional packs and drag them into order; no
+submod-specific load-order file is required. The `? Help` button in the picker
+summarizes the launch process. `Rebuild Cache` recreates generated compatibility
+packs from the installed Workshop files without modifying those source files.
 
 **Do not enable the same Workshop packs in Feral's Mod Manager when launching the game with this launcher. This launcher uses an isolated copy of Feral's preferences with mod toggles disabled.**
 
@@ -148,15 +134,17 @@ Full verification recomputes Workshop source hashes:
 
 If Steam updates an indexed Workshop pack, the launcher offers to rebuild the
 compatibility cache from the current files. Progress is written to
-`rebuild-progress.log` and shown through notifications. A new combination of
-already indexed submods is cached on first use; the launcher shows a notice
-because this can take a few minutes.
+`rebuild-progress.log`. A new combination of
+already indexed submods is cached on first use; the launcher shows a foreground
+progress window because this can take a few minutes.
 
 ### Uninstall
 
 _For when you decide you should probably get off your computer and do something valuable with your life._
 
-Quit ATTILA, then open `Uninstall MK1212 Mac Launcher.app` from the installed folder, or run:
+Quit ATTILA, then open `Uninstall MK1212 Mac Launcher.app` from the installed
+folder. macOS requests administrator authorization only to remove the
+Installer-owned folder from Applications. Source-checkout users can instead run:
 
 ```sh
 ./bin/mk1212-mac-uninstall
@@ -197,7 +185,7 @@ writes inside the Feral `.app` or a Workshop item directory. The ten-slot change
 exists only in the launched process's private memory and disappears when ATTILA
 exits; the executable on disk and its Feral signature remain unchanged.
 
-The runtime patch is intentionally fail-closed. Release 0.7.0 supports only the
+The runtime patch is intentionally fail-closed. Release 0.8.0 supports only the
 ARM64 Feral 1.6.1 build `480285.103778`, whose executable SHA-256 is
 `13f5d523019f291f489353fa5d3661bc9a668bb2b0375d6c3201e01d74525c5e`.
 Any different build is refused until its offsets and instruction guards are
@@ -216,6 +204,8 @@ _In case you want to, which I know you don't._
 ```sh
 python3 -m unittest discover -s tests -v
 ./scripts/build-runtime-patch
+./scripts/build-launcher-gui
+./scripts/build-package
 ./scripts/build-release
 ./scripts/build-dmg
 ```
@@ -227,16 +217,10 @@ Ad-hoc signing proves bundle integrity; it is not Apple Developer ID signing or
 notarization. Because this community build has no Apple Developer ID
 certificate, a browser download may receive a quarantine flag and show
 “Apple could not verify … free of malware.” After confirming the DMG checksum,
-remove that user-download flag once and launch the app:
-
-```sh
-xattr -dr com.apple.quarantine "/Applications/MK1212 Mac Launcher"
-open "/Applications/MK1212 Mac Launcher/MK1212 Mac Launcher.app"
-```
-
-Alternatively, use macOS Privacy & Security’s **Open Anyway** control after a
-user-initiated launch attempt. Do not use this for an unverified copy; verify
-the release checksum first.
+right-click the installer, choose **Open**, and confirm. Alternatively, use
+macOS Privacy & Security’s **Open Anyway** control after a user-initiated launch
+attempt. Do not use this for an unverified copy; verify the release checksum
+first.
 
 Maintainers with a Developer ID Application certificate can set
 `CODESIGN_IDENTITY="Developer ID Application: …"` while building. Eliminating
@@ -247,9 +231,9 @@ stapling, which cannot be performed without that account and certificate.
 
 _In case you don't know how to download a file from a GitHub repo — which is fine, we're not all insufferable nerdcels who spend our lives in front of computers... though you're a Total War gamer which I'm not sure is much better._
 
-[**DOWNLOAD THE LAUNCHER!!!!** (yes this is a real link, there are no lonely milfs near you, and i don't even know what an extended warranty is)](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.7.0.dmg)
+[**DOWNLOAD THE LAUNCHER!!!!** (yes this is a real link, there are no lonely milfs near you, and i don't even know what an extended warranty is)](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.8.0.dmg)
 
-[Download the SHA-256 checksum](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.7.0.dmg.sha256)
+[Download the SHA-256 checksum](https://github.com/ausxen/MK1212_macOS/raw/refs/heads/main/dist/MK1212_macOS-0.8.0.dmg.sha256)
 
 ## Bug Reporting
 

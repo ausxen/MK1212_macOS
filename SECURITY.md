@@ -8,8 +8,11 @@ Please report path traversal, unsafe overwrite, command execution, privilege
 boundary, or destructive-uninstall issues privately to the repository owner.
 Do not attach proprietary pack files or private logs.
 
-The project does not need administrator privileges and should not be run with
-`sudo`.
+The game launcher and compatibility-cache operations do not run as
+administrator. The standard package installer uses macOS authorization to
+write its exact folder under `/Applications`; the native uninstaller requests
+authorization only to remove that same Installer-owned folder. Do not run the
+launcher or its command-line tools with `sudo`.
 
 The ten-slot feature loads the bundled, ad-hoc-signed ARM64 compatibility
 library into the genuine Feral process. It refuses unknown executable hashes,

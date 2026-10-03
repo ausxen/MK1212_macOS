@@ -5,25 +5,25 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>English</string>
     <key>CFBundleDisplayName</key>
-	<string>ausxen's MK1212 macOS Launcher</string>
-	<key>CFBundleExecutable</key>
-	<string>MK1212 Mac Launcher</string>
+    <string>MK1212 Launcher UI</string>
+    <key>CFBundleExecutable</key>
+    <string>mk1212-launcher-gui</string>
     <key>CFBundleIdentifier</key>
-    <string>local.mk1212.mac-launcher</string>
+    <string>local.mk1212.mac-launcher.ui</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
-	<key>CFBundleName</key>
-	<string>ausxen's MK1212 macOS Launcher</string>
+    <key>CFBundleName</key>
+    <string>MK1212 Launcher UI</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-	<string>0.8.0</string>
+    <string>0.8.0</string>
     <key>CFBundleVersion</key>
-	<string>8</string>
-	<key>CFBundleIconFile</key>
-	<string>MK1212MacLauncher.icns</string>
+    <string>8</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

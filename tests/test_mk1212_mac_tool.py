@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import argparse
+import json
 import struct
 import sys
 import tempfile
@@ -102,6 +104,130 @@ class LoadOrderTests(unittest.TestCase):
 
 
 class TransientProfileTests(unittest.TestCase):
+    def test_new_submod_combination_uses_visible_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            done_path = state_dir / "done.json"
+            state = {
+                "game_root": directory,
+                "source_packs": [{"name": "one.pack", "path": "/one.pack"}],
+                "profiles": {},
+            }
+            expected = {"key": "prepared-profile"}
+            with patch.object(tool, "profile_key", return_value="new-key"), \
+                 patch.object(tool, "start_rebuild_progress_window", return_value=done_path), \
+                 patch.object(tool, "ensure_profile", return_value=expected) as prepare, \
+                 patch.object(tool.time, "sleep"):
+                profile = tool.ensure_profile_with_progress(
+                    state_dir, state, ["one.pack"],
+                )
+
+            self.assertIs(profile, expected)
+            self.assertIsNotNone(prepare.call_args.kwargs["progress"])
+            self.assertEqual(json.loads(done_path.read_text())["status"], "success")
+
+    def test_fresh_launch_prepares_state_with_visible_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            done_path = state_dir / "done.json"
+
+            def fake_install(args):
+                tool.save_json(Path(args.state_dir) / "state.json", {"status": "prepared"})
+
+            args = argparse.Namespace(game_root=None)
+            with patch.object(tool, "start_rebuild_progress_window", return_value=done_path), \
+                 patch.object(tool, "install_command", side_effect=fake_install), \
+                 patch.object(tool.time, "sleep"):
+                state = tool.prepare_launch_state(args, state_dir)
+
+            self.assertEqual(state["status"], "prepared")
+            self.assertEqual(json.loads(done_path.read_text())["status"], "success")
+
+    def test_uninstall_is_idempotent_after_cache_was_removed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            tool.save_json(state_dir / "state.json", {"status": "uninstalled"})
+            with patch.object(tool, "game_running", return_value=False):
+                tool.uninstall_command(argparse.Namespace(state_dir=str(state_dir)))
+
+    def test_native_picker_returns_drag_order_and_selection(self):
+        state = {
+            "source_packs": [
+                {"name": "one.pack", "optional": True},
+                {"name": "two.pack", "optional": True},
+            ],
+            "selected_optional_packs": ["one.pack"],
+        }
+        returned = json.dumps({
+            "action": "confirm", "selected": ["two.pack"],
+            "order": ["two.pack", "one.pack"],
+        })
+        with patch.object(tool, "launcher_gui_path", return_value=Path("/tmp/gui")), \
+             patch.object(tool.subprocess, "run",
+                          return_value=tool.subprocess.CompletedProcess([], 0, returned, "")) as run:
+            choice = tool.choose_optional_packs(state, "Launch")
+        self.assertEqual(choice, {
+            "action": "confirm", "selected": ["two.pack"],
+            "order": ["two.pack", "one.pack"],
+        })
+        config = json.loads(run.call_args.args[0][1])
+        self.assertEqual([item["name"] for item in config["items"]], ["one.pack", "two.pack"])
+        self.assertIn("Do not enable any mods", config["helpText"])
+
+    def test_force_rebuild_removes_only_generated_profiles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            game = root / "game"
+            cache = game / "TotalWarAttilaData/.mk1212-cache"
+            profiles = cache / "profiles"
+            recovery = cache / "recovery"
+            profiles.mkdir(parents=True)
+            recovery.mkdir()
+            (profiles / "old-generated-file").write_text("generated")
+            (recovery / "preserved-file").write_text("preserved")
+            state_dir = root / "state"
+            state = {
+                "game_root": str(game), "cache_root": str(cache),
+                "profiles": {"old": {}}, "default_profile_key": "old",
+                "core_profile_key": "old",
+            }
+            with patch.object(tool, "report_rebuild_progress"), \
+                 patch.object(tool, "rebuild_profiles_for_current_sources") as rebuild:
+                tool.force_rebuild_profile_cache(state_dir, state)
+            self.assertFalse(profiles.exists())
+            self.assertEqual((recovery / "preserved-file").read_text(), "preserved")
+            self.assertEqual(state["profiles"], {})
+            self.assertNotIn("default_profile_key", state)
+            self.assertNotIn("core_profile_key", state)
+            rebuild.assert_called_once_with(state_dir, state)
+
+    def test_nested_gui_app_is_detected_from_its_executable(self):
+        executable = Path("/tmp/MK1212 Launcher UI.app/Contents/MacOS/mk1212-launcher-gui")
+        self.assertEqual(tool.launcher_gui_app(executable),
+                         Path("/tmp/MK1212 Launcher UI.app"))
+        self.assertIsNone(tool.launcher_gui_app(Path("/tmp/mk1212-launcher-gui")))
+
+    def test_progress_window_receives_status_and_done_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            with patch.object(tool, "launcher_gui_path", return_value=Path("/tmp/gui")), \
+                 patch.object(tool.subprocess, "Popen") as popen:
+                done_path = tool.start_rebuild_progress_window(state_dir)
+            config = json.loads((state_dir / "rebuild-progress-ui-config.json").read_text())
+            self.assertEqual(config["mode"], "progress")
+            self.assertEqual(config["progressPath"], str(state_dir / "rebuild-progress.json"))
+            self.assertEqual(config["donePath"], str(done_path))
+            popen.assert_called_once()
+
+    def test_progress_reporting_never_posts_system_notification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(tool.Path, "home", return_value=root), \
+                 patch.object(tool.subprocess, "run") as run:
+                tool.report_rebuild_progress(root / "state", "Preparing", notify=True)
+            run.assert_not_called()
+            self.assertTrue((root / "state/rebuild-progress.json").is_file())
+
     def test_refresh_discovers_new_workshop_pack_without_feral_record(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -245,9 +371,8 @@ class TransientProfileTests(unittest.TestCase):
         self.assertEqual(len(repairs), 1)
 
     def test_macos_slot_helper_ui_is_removed_but_listener_entry_point_remains(self):
-        source_pack = Path(
-            "/Users/austen/Library/Application Support/Steam/steamapps/workshop/content/325610/1934544571/1-1212scripts.pack"
-        )
+        source_pack = (Path.home() /
+            "Library/Application Support/Steam/steamapps/workshop/content/325610/1934544571/1-1212scripts.pack")
         if not source_pack.is_file():
             self.skipTest("local MK1212 Scripts pack is unavailable")
         _, entries = tool.read_pack(source_pack)
@@ -268,9 +393,8 @@ class TransientProfileTests(unittest.TestCase):
         self.assertEqual(len(repairs), 1)
 
     def test_frontend_windows_helper_prompt_is_not_constructed(self):
-        source_pack = Path(
-            "/Users/austen/Library/Application Support/Steam/steamapps/workshop/content/325610/1934544571/1-1212scripts.pack"
-        )
+        source_pack = (Path.home() /
+            "Library/Application Support/Steam/steamapps/workshop/content/325610/1934544571/1-1212scripts.pack")
         if not source_pack.is_file():
             self.skipTest("local MK1212 Scripts pack is unavailable")
         _, entries = tool.read_pack(source_pack)
@@ -347,6 +471,18 @@ class TransientProfileTests(unittest.TestCase):
             _, winners = tool.plan_compatibility(root, [high, low])
             self.assertEqual(winners["script/shared.lua"][0], high)
 
+    def test_high_priority_pack_gets_later_movie_filename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "TotalWarAttilaData/data").mkdir(parents=True)
+            high, low = root / "high.pack", root / "low.pack"
+            write_pack(high, [("campaigns/main_attila/startpos.esf", b"high")])
+            write_pack(low, [("campaigns/main_attila/startpos.esf", b"low")])
+            plan, _ = tool.plan_compatibility(root, [high, low])
+            self.assertEqual([item["order"] for item in plan], [1, 2])
+            self.assertEqual([item["autoload_order"] for item in plan], [2, 1])
+            self.assertGreater(plan[0]["content_name"], plan[1]["content_name"])
+
     def test_mod_dds_is_checked_against_stock_contract(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -359,6 +495,7 @@ class TransientProfileTests(unittest.TestCase):
             write_pack(stock, [("textures/shared.dds", stock_dds)], pack_type=4)
             plan, _ = tool.plan_compatibility(root, [high])
             self.assertEqual(len(plan[0]["repairs"]), 1)
+            self.assertGreater(plan[0]["overlay_name"], plan[0]["content_name"])
             repaired = tool.parse_dds(plan[0]["repairs"][0]["data"])
             self.assertEqual((repaired.width, repaired.height, repaired.mip_count), (8, 8, 4))
 

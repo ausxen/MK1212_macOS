@@ -31,8 +31,8 @@ from typing import BinaryIO, Callable, Iterable
 
 
 APP_ID = "325610"
-TOOL_VERSION = "0.7.0"
-PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-no-windows-helper-ui-v3"
+TOOL_VERSION = "0.8.0"
+PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-no-windows-helper-ui-v4-pack-priority"
 SUPPORTED_RUNTIME_EXECUTABLE_SHA256 = (
     "13f5d523019f291f489353fa5d3661bc9a668bb2b0375d6c3201e01d74525c5e"
 )
@@ -168,7 +168,7 @@ def sha256_path_with_progress(path: Path, progress: Callable[[str], None]) -> st
 
 
 def report_rebuild_progress(state_dir: Path, message: str, notify: bool = False) -> None:
-    """Persist rebuild status and best-effort a non-blocking macOS notification."""
+    """Persist rebuild status without producing macOS notification banners."""
     now = utc_now()
     log_dir = Path.home() / "Library/Logs/MK1212 Mac Launcher"
     try:
@@ -179,14 +179,6 @@ def report_rebuild_progress(state_dir: Path, message: str, notify: bool = False)
     except OSError:
         # Progress reporting must never make the compatibility rebuild fail.
         pass
-    if notify:
-        escaped = message.replace("\\", "\\\\").replace('"', '\\"')
-        script = f'display notification "{escaped}" with title "MK1212 Mac Launcher"'
-        try:
-            subprocess.run(["/usr/bin/osascript", "-e", script],
-                           capture_output=True, text=True, timeout=5)
-        except (OSError, subprocess.TimeoutExpired):
-            pass
 
 
 def quick_fingerprint(path: Path) -> str:
@@ -888,10 +880,17 @@ def plan_compatibility(game_root: Path, packs: list[Path]) -> tuple[list[dict], 
                     repaired_info = parse_dds(transformed)
                     repairs.append({"entry": entry, "data": transformed, "reason": reason,
                                     "source": vars(source_info), "target": vars(repaired_info)})
+        # ATTILA resolves collisions between auto-loaded movie packs in
+        # ascending filename order, with the later pack winning.  `packs` is
+        # intentionally highest-priority first, so reverse only the generated
+        # filename rank.  Keep each repair overlay immediately after its
+        # content clone at the same rank.
+        autoload_order = len(parsed) - order + 1
         safe = re.sub(r"[^A-Za-z0-9._-]+", "_", pack.stem)[:64]
-        content_name = f"{GENERATED_PREFIX}{order:03d}_content_{safe}_movie.pack"
-        overlay_name = f"{GENERATED_PREFIX}{order:03d}_repair_{safe}_movie.pack" if repairs else None
-        plan.append({"order": order, "source": pack, "metadata": metadata, "entries": entries,
+        content_name = f"{GENERATED_PREFIX}{autoload_order:03d}_content_{safe}_movie.pack"
+        overlay_name = f"{GENERATED_PREFIX}{autoload_order:03d}_repair_{safe}_movie.pack" if repairs else None
+        plan.append({"order": order, "autoload_order": autoload_order,
+                     "source": pack, "metadata": metadata, "entries": entries,
                      "repairs": repairs, "content_name": content_name, "overlay_name": overlay_name})
     lua_winners: dict[str, tuple[Path, PackEntry]] = {}
     for pack, _, entries, _ in parsed:
@@ -1341,7 +1340,12 @@ def records_for_names(state: dict, names: list[str]) -> list[dict]:
     return [by_name[name.casefold()] for name in names]
 
 
-def ensure_profile(state_dir: Path, state: dict, names: list[str]) -> dict:
+def ensure_profile(
+    state_dir: Path,
+    state: dict,
+    names: list[str],
+    progress: Callable[[str], None] | None = None,
+) -> dict:
     records = records_for_names(state, names)
     key = profile_key(records)
     cached = state.get("profiles", {}).get(key)
@@ -1350,7 +1354,9 @@ def ensure_profile(state_dir: Path, state: dict, names: list[str]) -> dict:
         if failures:
             raise ToolError("profile cache verification failed:\n  " + "\n  ".join(failures))
         return cached
-    profile = build_profile_cache(state_dir, Path(state["game_root"]), records)
+    profile = build_profile_cache(
+        state_dir, Path(state["game_root"]), records, progress=progress,
+    )
     state.setdefault("profiles", {})[key] = profile
     save_json(state_dir / "state.json", state)
     return profile
@@ -1508,128 +1514,141 @@ def selected_names(state: dict, optionals: list[str]) -> list[str]:
     return optional + core
 
 
-CHECKBOX_PICKER_JXA = r'''
-ObjC.import("AppKit");
+LAUNCHER_HELP = """Using the MK1212 macOS Launcher
 
-function run(argv) {
-    const config = JSON.parse(argv[0]);
-    const alert = $.NSAlert.alloc.init;
-    alert.messageText = "MK1212 Mac Launcher";
-    alert.informativeText = "Check the submods to use. Set a priority number to reorder them (1 loads first). Unchecked items are disabled for this launch; core MK1212 packs remain enabled.";
-    alert.addButtonWithTitle(config.actionLabel);
-    alert.addButtonWithTitle("Cancel");
+1. Check each optional submod you want to use.
 
-    const width = 650;
-    const rowHeight = 30;
-    const height = Math.max(rowHeight, config.items.length * rowHeight);
-    const view = $.NSView.alloc.initWithFrame($.NSMakeRect(0, 0, width, height));
-    const boxes = [];
-    const ranks = [];
-    for (let index = 0; index < config.items.length; index++) {
-        const item = config.items[index];
-        const box = $.NSButton.alloc.initWithFrame(
-            $.NSMakeRect(0, height - ((index + 1) * rowHeight), width - 100, rowHeight)
-        );
-        box.setButtonType($.NSSwitchButton);
-        box.title = $(item.name);
-        box.state = item.selected ? 1 : 0;
-        view.addSubview(box);
-        boxes.push(box);
+2. Drag submods into priority order. The top row has highest priority, matching the ordering shown by Feral's launcher. Core MK1212 packs are included automatically and do not appear in this list.
 
-        const rank = $.NSTextField.alloc.initWithFrame(
-            $.NSMakeRect(width - 82, height - ((index + 1) * rowHeight) + 3, 72, rowHeight - 6)
-        );
-        rank.stringValue = $(String(item.rank));
-        rank.alignment = $.NSTextAlignmentRight;
-        rank.placeholderString = $("priority");
-        view.addSubview(rank);
-        ranks.push(rank);
-    }
-    alert.accessoryView = view;
-    $.NSApplication.sharedApplication.activateIgnoringOtherApps(true);
-    const response = Number(ObjC.unwrap(alert.runModal));
-    if (response !== Number(ObjC.unwrap($.NSAlertFirstButtonReturn))) {
-        return "__CANCEL__";
-    }
-    const rows = [];
-    for (let index = 0; index < boxes.length; index++) {
-        const name = config.items[index].name;
-        const rawRank = Number(ObjC.unwrap(ranks[index].stringValue));
-        const rank = Number.isFinite(rawRank) ? rawRank : index + 1;
-        rows.push({name: name, selected: Number(ObjC.unwrap(boxes[index].state)) === 1,
-                   rank: rank, index: index});
-    }
-    rows.sort((left, right) => left.rank - right.rank || left.index - right.index);
-    const order = rows.map(row => row.name);
-    const picked = [];
-    for (const row of rows) {
-        if (row.selected) {
-            picked.push(row.name);
-        }
-    }
-    return JSON.stringify({selected: picked, order: order});
-}
-'''
+3. Click Launch. The first launch of a new combination can take a little longer while its compatibility cache is prepared.
+
+4. Feral's Total War: ATTILA launcher will appear next. Do not enable any mods there. Leave every mod unchecked and start the game normally. This launcher has already activated the selected MK1212 packs and submods in the correct order.
+
+Rebuild Cache
+
+Use Rebuild Cache only for troubleshooting—for example, after a Workshop update or if the game is not reflecting your selected submods. It safely discards the launcher's generated compatibility packs and recreates them from the installed Workshop files. It does not modify the original Workshop downloads.
+
+Cancelling this window does not launch ATTILA.
+"""
 
 
-def choose_optional_packs(state: dict, action_label: str = "Launch") -> dict | None:
+def launcher_gui_path() -> Path:
+    source = Path(__file__).resolve()
+    candidates = [
+        source.with_name("MK1212 Launcher UI.app") / "Contents/MacOS/mk1212-launcher-gui",
+        source.with_name("mk1212-launcher-gui"),
+        source.parents[1] / "build/mk1212-launcher-gui",
+    ]
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    raise ToolError("the native launcher window helper is missing; reinstall the launcher")
+
+
+def launcher_gui_app(gui_executable: Path) -> Path | None:
+    return next((parent for parent in gui_executable.parents
+                 if parent.suffix.casefold() == ".app"), None)
+
+
+def choose_optional_packs(state: dict, action_label: str = "Launch",
+                          status: str | None = None) -> dict | None:
     optionals = optional_load_order(state)
-    if not optionals:
-        return {"selected": [], "order": []}
     current = {name.casefold() for name in state.get("selected_optional_packs", optionals)}
-    items = [{"name": name, "selected": name.casefold() in current, "rank": index + 1}
-             for index, name in enumerate(optionals)]
-    config = json.dumps({"items": items, "actionLabel": action_label})
-    result = subprocess.run(["/usr/bin/osascript", "-l", "JavaScript", "-e", CHECKBOX_PICKER_JXA,
-                             "--", config], capture_output=True, text=True)
-    if result.returncode != 0:
-        raise ToolError("submod chooser failed: " + result.stderr.strip())
-    value = result.stdout.strip()
-    if value == "__CANCEL__":
-        return None
+    items = [{"name": name, "selected": name.casefold() in current} for name in optionals]
+    config = json.dumps({"items": items, "actionLabel": action_label,
+                         "helpText": LAUNCHER_HELP, "status": status})
+    gui_executable = launcher_gui_path()
+    gui_app = launcher_gui_app(gui_executable)
+    if gui_app is not None:
+        with tempfile.TemporaryDirectory(prefix="mk1212-launcher-ui-") as directory:
+            exchange = Path(directory)
+            config_path = exchange / "config.json"
+            result_path = exchange / "result.json"
+            config_path.write_text(config, encoding="utf-8")
+            result = subprocess.run(
+                ["/usr/bin/open", "-n", "-W", str(gui_app), "--args",
+                 "--config", str(config_path), "--result", str(result_path)],
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                raise ToolError("launcher window failed: " + result.stderr.strip())
+            if not result_path.is_file():
+                raise ToolError("launcher window closed without returning a selection")
+            value = result_path.read_text(encoding="utf-8").strip()
+    else:
+        # Source-tree development builds are standalone executables.
+        result = subprocess.run([str(gui_executable), config], capture_output=True, text=True)
+        if result.returncode != 0:
+            raise ToolError("launcher window failed: " + result.stderr.strip())
+        value = result.stdout.strip()
     try:
         picked = json.loads(value)
     except json.JSONDecodeError as exc:
-        raise ToolError(f"submod chooser returned invalid data: {value!r}") from exc
-    if isinstance(picked, list):
-        # Accept the old helper's output if a cached/older app happens to
-        # return it; it cannot express a reordered list, but remains safe.
-        if any(item not in optionals for item in picked):
-            raise ToolError("submod chooser returned an invalid selection")
-        return {"selected": [name for name in optionals if name in picked],
-                "order": optionals}
-    if not isinstance(picked, dict) or not isinstance(picked.get("selected"), list) \
-            or not isinstance(picked.get("order"), list):
-        raise ToolError("submod chooser returned an invalid selection")
+        raise ToolError(f"launcher window returned invalid data: {value!r}") from exc
+    if not isinstance(picked, dict) or picked.get("action") not in ("confirm", "rebuild", "cancel") \
+            or not isinstance(picked.get("selected"), list) or not isinstance(picked.get("order"), list):
+        raise ToolError("launcher window returned an invalid selection")
     order = picked["order"]
     selected = picked["selected"]
     if (len(order) != len(optionals) or {str(item).casefold() for item in order} !=
             {name.casefold() for name in optionals} or
             any(item not in order for item in selected) or
             len({str(item).casefold() for item in selected}) != len(selected)):
-        raise ToolError("submod chooser returned an invalid order or selection")
+        raise ToolError("launcher window returned an invalid order or selection")
     canonical = {name.casefold(): name for name in optionals}
     order = [canonical[str(name).casefold()] for name in order]
     selected_set = {str(name).casefold() for name in selected}
-    return {"selected": [name for name in order if name.casefold() in selected_set],
+    if picked["action"] == "cancel":
+        return None
+    return {"action": picked["action"],
+            "selected": [name for name in order if name.casefold() in selected_set],
             "order": order}
 
 
-def show_first_use_notice() -> None:
-    script = ('display alert "MK1212 Mac Launcher" message '
-              '"This submod combination is being prepared for its first use. This can take up to a minute; ATTILA will open automatically when it is ready." '
-              'buttons {"Continue"} default button "Continue"')
-    subprocess.run(["/usr/bin/osascript", "-e", script], check=False,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def start_rebuild_progress_window(
+    state_dir: Path,
+    title: str = "Rebuilding compatibility cache",
+    detail: str = "This can take a few minutes. Please leave the launcher open.",
+) -> Path:
+    """Launch a non-blocking foreground progress window and return its done file."""
+    progress_path = state_dir / "rebuild-progress.json"
+    done_path = state_dir / "rebuild-progress-ui-done.json"
+    config_path = state_dir / "rebuild-progress-ui-config.json"
+    result_path = state_dir / "rebuild-progress-ui-result.json"
+    done_path.unlink(missing_ok=True)
+    result_path.unlink(missing_ok=True)
+    save_json(config_path, {
+        "mode": "progress", "items": [], "actionLabel": "Launch",
+        "helpText": "", "status": None,
+        "progressPath": str(progress_path), "donePath": str(done_path),
+        "progressTitle": title, "progressDetail": detail,
+    })
+    gui_executable = launcher_gui_path()
+    gui_app = launcher_gui_app(gui_executable)
+    if gui_app is not None:
+        result = subprocess.run(
+            ["/usr/bin/open", "-n", str(gui_app), "--args",
+             "--config", str(config_path), "--result", str(result_path)],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            raise ToolError("cache progress window failed: " + result.stderr.strip())
+    else:
+        subprocess.Popen(
+            [str(gui_executable), config_path.read_text(encoding="utf-8")],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    return done_path
 
 
 def install_command(args: argparse.Namespace) -> None:
     if game_running():
         raise ToolError("ATTILA is running; installation is refused")
+    state_dir = Path(args.state_dir).expanduser().resolve()
+    report_rebuild_progress(state_dir, "Locating ATTILA and installed Workshop packs")
     game_root = discover_game_root(args.game_root)
     data_root = game_root / "TotalWarAttilaData/data"
     manifest = game_root / "TotalWarAttilaData/feral/en/manifest.txt"
-    state_dir = Path(args.state_dir).expanduser().resolve()
     state_file = state_dir / "state.json"
     if (state_dir / "activation.json").exists():
         old = load_state(state_dir)
@@ -1643,6 +1662,7 @@ def install_command(args: argparse.Namespace) -> None:
     if cache_root.exists():
         raise ToolError(f"unledgered compatibility cache already exists: {cache_root}")
     packs = selected_packs(game_root, args.profile, args.load_order_file)
+    report_rebuild_progress(state_dir, f"Analyzing {len(packs)} installed mod packs")
     plan, lua_winners = plan_compatibility(game_root, packs)
     current_manifest = manifest.read_bytes()
     legacy_lua = [name for name, _ in parse_manifest(current_manifest) if name.casefold().endswith(".lua")]
@@ -1663,18 +1683,20 @@ def install_command(args: argparse.Namespace) -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
     save_json(state_file, state)
     try:
-        full = build_profile_cache(state_dir, game_root, sources, (plan, lua_winners))
+        progress = lambda message: report_rebuild_progress(state_dir, message)
+        full = build_profile_cache(state_dir, game_root, sources, (plan, lua_winners), progress)
         state["profiles"][full["key"]] = full
         state["default_profile_key"] = full["key"]
         core_records = [item for item in sources if not item["optional"]]
         if len(core_records) != len(sources):
-            core = build_profile_cache(state_dir, game_root, core_records)
+            core = build_profile_cache(state_dir, game_root, core_records, progress=progress)
             state["profiles"][core["key"]] = core
             state["core_profile_key"] = core["key"]
         prepare_isolated_home(state_dir)
         state["status"] = "prepared"
         state["prepared_at"] = utc_now()
         save_json(state_file, state)
+        report_rebuild_progress(state_dir, "Verifying the completed compatibility cache")
         verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
     except BaseException:
         shutil.rmtree(cache_root, ignore_errors=True)
@@ -1805,7 +1827,7 @@ def confirm_source_rebuild(records: list[dict]) -> bool:
     message = ("Workshop files changed since this profile was prepared:\n\n" +
                "\n".join(names) +
                "\n\nRebuild the compatibility cache from the current files? "
-               "This may take a few minutes; progress notifications will appear.")
+               "This may take a few minutes; progress is recorded in the launcher log.")
     script = '''on run argv
 try
     display dialog (item 1 of argv) with title "MK1212 Mac Launcher" buttons {"Cancel", "Rebuild Cache"} default button "Rebuild Cache" cancel button "Cancel"
@@ -1952,13 +1974,66 @@ def rebuild_profiles_for_current_sources(state_dir: Path, state: dict) -> None:
         raise
 
 
+def force_rebuild_profile_cache(state_dir: Path, state: dict) -> None:
+    """Remove only ledgered generated profiles, then recreate selected/core caches."""
+    cache_root = Path(state["cache_root"])
+    expected_cache_root = Path(state["game_root"]) / "TotalWarAttilaData/.mk1212-cache"
+    if cache_root.resolve() != expected_cache_root.resolve():
+        raise ToolError(f"refusing unexpected cache rebuild target: {cache_root}")
+    if cache_root.is_symlink():
+        raise ToolError(f"refusing symlinked cache rebuild target: {cache_root}")
+    profiles_root = cache_root / "profiles"
+    if profiles_root.is_symlink() or (profiles_root.exists() and not profiles_root.is_dir()):
+        raise ToolError(f"refusing unexpected profiles cache target: {profiles_root}")
+
+    report_rebuild_progress(state_dir, "Removing generated compatibility profiles")
+    if profiles_root.exists():
+        shutil.rmtree(profiles_root)
+    state["profiles"] = {}
+    state.pop("default_profile_key", None)
+    state.pop("core_profile_key", None)
+    state["cache_rebuild_requested_at"] = utc_now()
+    save_json(state_dir / "state.json", state)
+    rebuild_profiles_for_current_sources(state_dir, state)
+
+
+def choose_with_cache_actions(state_dir: Path, state: dict,
+                              action_label: str = "Launch") -> dict | None:
+    """Run the picker, servicing cache rebuild requests before confirmation."""
+    status = None
+    while True:
+        choice = choose_optional_packs(state, action_label, status)
+        if choice is None:
+            return None
+        state["optional_load_order"] = choice["order"]
+        state["selected_optional_packs"] = choice["selected"]
+        save_json(state_dir / "state.json", state)
+        if choice["action"] == "confirm":
+            return choice
+        report_rebuild_progress(state_dir, "Starting compatibility cache rebuild")
+        done_path = start_rebuild_progress_window(state_dir)
+        try:
+            force_rebuild_profile_cache(state_dir, state)
+        except BaseException as exc:
+            save_json(done_path, {"status": "failed", "message": f"Cache rebuild stopped: {exc}"})
+            time.sleep(0.5)
+            raise
+        save_json(done_path, {"status": "success", "message": "Cache rebuild complete."})
+        time.sleep(0.5)
+        status = "Cache rebuilt successfully from the installed Workshop files."
+
+
 def uninstall_command(args: argparse.Namespace) -> None:
     if game_running():
         raise ToolError("ATTILA is running; uninstall is refused")
     state_dir = Path(args.state_dir).expanduser().resolve()
     state = load_state(state_dir)
-    if state.get("status") != "prepared":
-        raise ToolError(f"state is {state.get('status')!r}, not prepared")
+    status = state.get("status")
+    if status == "uninstalled":
+        print("Compatibility cache was already removed.")
+        return
+    if status != "prepared":
+        raise ToolError(f"state is {status!r}, not prepared")
     recover_stale_activation(state_dir, state)
     verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
     backup = manifest_backup(Path(state["manifest"]), state_dir, "uninstall")
@@ -1983,33 +2058,86 @@ def uninstall_command(args: argparse.Namespace) -> None:
 
 
 def configure_command(args: argparse.Namespace) -> None:
+    if game_running():
+        raise ToolError("ATTILA is running; configuration is refused")
     state_dir = Path(args.state_dir).expanduser().resolve()
     state = load_state(state_dir)
     if state.get("status") != "prepared":
         raise ToolError(f"state is {state.get('status')!r}, not prepared")
     recover_stale_activation(state_dir, state)
     refresh_optional_sources(state)
-    choice = choose_optional_packs(state, "Save")
+    choice = choose_with_cache_actions(state_dir, state, "Save")
     if choice is None:
         print("Submod selection cancelled.")
         return
     state["optional_load_order"] = choice["order"]
     state["selected_optional_packs"] = choice["selected"]
     names = selected_names(state, choice["selected"])
-    if profile_key(records_for_names(state, names)) not in state.get("profiles", {}):
-        show_first_use_notice()
-    profile = ensure_profile(state_dir, state, names)
+    profile = ensure_profile_with_progress(state_dir, state, names)
     save_json(state_dir / "state.json", state)
     print("Selected optional submods: " +
           (", ".join(choice["selected"]) if choice["selected"] else "none (core only)"))
     print(f"Prepared profile {profile['key']} with {len(profile['pack_names'])} packs.")
 
 
+def ensure_profile_with_progress(state_dir: Path, state: dict, names: list[str]) -> dict:
+    """Prepare a new submod combination behind a foreground progress window."""
+    key = profile_key(records_for_names(state, names))
+    if key in state.get("profiles", {}):
+        return ensure_profile(state_dir, state, names)
+
+    report_rebuild_progress(state_dir, "Starting first-use preparation for this submod combination")
+    done_path = start_rebuild_progress_window(
+        state_dir,
+        "Preparing submods for first use",
+        "The launcher is building this combination's compatibility cache. ATTILA will open automatically when it is ready.",
+    )
+    try:
+        profile = ensure_profile(
+            state_dir, state, names,
+            progress=lambda message: report_rebuild_progress(state_dir, message),
+        )
+    except BaseException as exc:
+        save_json(done_path, {"status": "failed", "message": f"Submod preparation stopped: {exc}"})
+        time.sleep(0.5)
+        raise
+    save_json(done_path, {"status": "success", "message": "Submod combination is ready."})
+    time.sleep(0.5)
+    return profile
+
+
+def prepare_launch_state(args: argparse.Namespace, state_dir: Path) -> dict:
+    """Perform visible first-run setup after a fresh install or uninstall."""
+    state_file = state_dir / "state.json"
+    state = load_state(state_dir) if state_file.is_file() else None
+    if state is not None and state.get("status") not in ("uninstalled", "rolled_back"):
+        return state
+
+    report_rebuild_progress(state_dir, "Starting first-time launcher setup")
+    done_path = start_rebuild_progress_window(
+        state_dir,
+        "Preparing MK1212 for first use",
+        "The launcher is building its compatibility cache. This can take a few minutes.",
+    )
+    try:
+        install_command(argparse.Namespace(
+            state_dir=str(state_dir), game_root=args.game_root,
+            profile="mk1212", load_order_file=None,
+        ))
+    except BaseException as exc:
+        save_json(done_path, {"status": "failed", "message": f"First-time setup stopped: {exc}"})
+        time.sleep(0.5)
+        raise
+    save_json(done_path, {"status": "success", "message": "First-time setup complete."})
+    time.sleep(0.5)
+    return load_state(state_dir)
+
+
 def launch_command(args: argparse.Namespace) -> None:
     if game_running():
         raise ToolError("ATTILA is already running; launch is refused")
     state_dir = Path(args.state_dir).expanduser().resolve()
-    state = load_state(state_dir)
+    state = prepare_launch_state(args, state_dir)
     if state.get("status") != "prepared":
         raise ToolError(f"state is {state.get('status')!r}, not prepared")
     recover_stale_activation(state_dir, state)
@@ -2027,7 +2155,7 @@ def launch_command(args: argparse.Namespace) -> None:
         picked = state.get("selected_optional_packs", optional_pack_names(state))
     else:
         report_rebuild_progress(state_dir, "Opening the optional submod selector", notify=True)
-        choice = choose_optional_packs(state)
+        choice = choose_with_cache_actions(state_dir, state)
         if choice is None:
             report_rebuild_progress(
                 state_dir, "Submod selection cancelled; ATTILA was not launched", notify=True,
@@ -2040,9 +2168,7 @@ def launch_command(args: argparse.Namespace) -> None:
                                 notify=True)
     state["selected_optional_packs"] = picked
     names = selected_names(state, picked)
-    if profile_key(records_for_names(state, names)) not in state.get("profiles", {}):
-        show_first_use_notice()
-    profile = ensure_profile(state_dir, state, names)
+    profile = ensure_profile_with_progress(state_dir, state, names)
     save_json(state_dir / "state.json", state)
     game_root = Path(state["game_root"])
     original_executable = game_root / EXECUTABLE_RELATIVE
@@ -2052,7 +2178,7 @@ def launch_command(args: argparse.Namespace) -> None:
     executable_sha256 = sha256_path(executable)
     if executable_sha256 != SUPPORTED_RUNTIME_EXECUTABLE_SHA256:
         raise ToolError(
-            "the ten-slot runtime patch supports only Feral ATTILA 1.6.1 build 480285.103778; "
+            "the heap-only ten-slot patch supports only Feral ATTILA 1.6.1 build 480285.103778; "
             f"found executable SHA-256 {executable_sha256}"
         )
     runtime_library = Path(__file__).resolve().with_name("libmk1212-slot-runtime-patch.dylib")
@@ -2063,28 +2189,30 @@ def launch_command(args: argparse.Namespace) -> None:
         if development_library.is_file():
             runtime_library = development_library
     if not runtime_library.is_file():
-        raise ToolError(f"ten-slot runtime patch library is missing: {runtime_library}")
+        raise ToolError(f"heap-only ten-slot patch library is missing: {runtime_library}")
     signature = subprocess.run(
         ["/usr/bin/codesign", "--verify", "--strict", str(runtime_library)],
         capture_output=True, text=True,
     )
     if signature.returncode != 0:
-        raise ToolError("ten-slot runtime patch library signature is invalid: " + signature.stderr.strip())
+        raise ToolError("heap-only ten-slot patch library signature is invalid: " + signature.stderr.strip())
     home = prepare_isolated_home(state_dir)
     activation = activate_profile(state_dir, state, profile)
     log_dir = state_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     launch_stamp = datetime.now().strftime('%Y%m%dT%H%M%S')
     log = log_dir / f"launch-{launch_stamp}.json"
-    patch_log = log_dir / f"ten-slot-runtime-patch-{launch_stamp}.log"
+    patch_log = log_dir / f"heap-slot-patch-{launch_stamp}.log"
     payload = {"tool_version": TOOL_VERSION, "launched_at": utc_now(), "executable": str(executable),
                "executable_sha256": executable_sha256, "cwd": str(game_root / "TotalWarAttilaData"),
                "original_executable": str(original_executable),
                "original_executable_sha256": sha256_path(original_executable),
                "argv": [str(executable)], "isolated_home": str(home),
                "feral_app_unchanged": True,
-               "ten_slot_runtime_patch_library": str(runtime_library),
-               "ten_slot_runtime_patch_log": str(patch_log),
+               "runtime_mode": "heap-field-6-to-10",
+               "heap_slot_patch_library": str(runtime_library),
+               "heap_slot_patch_log": str(patch_log),
+               "executable_page_writes": False,
                "profile_key": profile["key"], "pack_names": profile["pack_names"],
                "optional_packs": picked, "dds_repairs": profile["dds_repairs"],
                "lua_repairs": profile.get("lua_repairs", []),
@@ -2117,12 +2245,12 @@ def launch_command(args: argparse.Namespace) -> None:
         patch_result = patch_log.read_text(errors="replace").strip() if patch_log.is_file() else "no patch log"
         raise ToolError(
             f"ATTILA exited with status {return_code}; transient compatibility files were removed. "
-            f"Ten-slot patch report: {patch_result}"
+            f"Heap-only ten-slot patch report: {patch_result}"
         )
     patch_result = patch_log.read_text(errors="replace").strip() if patch_log.is_file() else ""
-    if "status=patched-6-to-10 kern_return=0" not in patch_result:
+    if "status=observer-ready" not in patch_result:
         raise ToolError(
-            "ATTILA exited, but the ten-slot runtime patch did not report success; "
+            "ATTILA exited, but the heap-only ten-slot patch did not report a valid session; "
             f"inspect {patch_log}"
         )
 

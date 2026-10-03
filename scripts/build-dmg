@@ -2,76 +2,37 @@
 set -euo pipefail
 
 repo_root="${0:A:h:h}"
-version="${VERSION:-0.7.0}"
+version="${VERSION:-0.8.0}"
 dist_root="$repo_root/dist"
 archive="$dist_root/MK1212_macOS-${version}.dmg"
+checksum="$archive.sha256"
 
-if [[ -e "$archive" ]]; then
-    print -u2 "Refusing to overwrite existing release: $archive"
+if [[ -e "$archive" || -e "$checksum" ]]; then
+    print -u2 "Refusing to overwrite an existing release or checksum: $archive"
     exit 1
 fi
 
 build_root="$(mktemp -d /private/tmp/mk1212-dmg.XXXXXX)"
-clean_root="$(mktemp -d /private/tmp/mk1212-dmg-clean.XXXXXX)"
+clean_root="$build_root/volume"
 rw_image="$build_root/volume-rw.dmg"
-mountpoint="$build_root/volume"
-runtime_library="$build_root/libmk1212-slot-runtime-patch.dylib"
-signing_identity="${CODESIGN_IDENTITY:--}"
-trap 'rm -rf "$build_root" "$clean_root"' EXIT
+mountpoint="$build_root/mount"
+package="$clean_root/Install MK1212 Mac Launcher.pkg"
+trap 'rm -rf "$build_root"' EXIT
 
-container="$build_root/MK1212 Mac Launcher"
-app_root="$container/MK1212 Mac Launcher.app"
-uninstaller_root="$container/Uninstall MK1212 Mac Launcher.app"
-mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
-mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
-mkdir -p "$mountpoint"
-mkdir -p "$dist_root"
-
-"$repo_root/scripts/build-runtime-patch" "$runtime_library" >/dev/null
-
-cp "$repo_root/app/Info.plist" "$app_root/Contents/Info.plist"
-cp "$repo_root/app/launcher" "$app_root/Contents/MacOS/MK1212 Mac Launcher"
-cp "$repo_root/src/mk1212_mac_tool.py" "$app_root/Contents/Resources/mk1212_mac_tool.py"
-cp "$runtime_library" "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
-cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212MacLauncher.icns"
-
-cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plist"
-cp "$repo_root/app/uninstaller/launcher" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
-cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
-cp "$repo_root/INSTALL.txt" "$container/README.txt"
-cp "$repo_root/app/Prepare MK1212 Mac Launcher.command" "$container/Prepare MK1212 Mac Launcher.command"
-
-chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
-chmod 755 "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
-chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py"
-chmod 755 "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
-chmod 755 "$container/Prepare MK1212 Mac Launcher.command"
-xattr -cr "$app_root" "$uninstaller_root"
-sign_args=(--force --deep --sign "$signing_identity")
-if [[ "$signing_identity" != "-" ]]; then
-    sign_args+=(--options runtime --timestamp)
-fi
-codesign "${sign_args[@]}" "$app_root"
-codesign --verify --deep --strict "$app_root"
-codesign "${sign_args[@]}" "$uninstaller_root"
-codesign --verify --deep --strict "$uninstaller_root"
-
-# Build from a metadata-clean copy so Finder/File Provider attributes do not
-# invalidate the ad-hoc signatures when the DMG is mounted.
-ditto --norsrc --noqtn "$container" "$clean_root/MK1212 Mac Launcher"
-ln -s /Applications "$clean_root/Applications"
-cp "$repo_root/app/MK1212MacLauncher.icns" "$clean_root/.VolumeIcon.icns"
+mkdir -p "$clean_root" "$mountpoint" "$dist_root"
+"$repo_root/scripts/build-package" "$package" >/dev/null
 cp "$repo_root/Read_Me_First.txt" "$clean_root/Read_Me_First.txt"
+cp "$repo_root/RELEASE-NOTES-0.8.0.md" "$clean_root/RELEASE-NOTES-0.8.0.md"
+cp "$repo_root/NOTICE.md" "$clean_root/NOTICE.md"
+cp "$repo_root/app/MK1212MacLauncher.icns" "$clean_root/.VolumeIcon.icns"
 
-# Custom volume icons are preserved reliably when set on a mounted writable
-# image before converting it to the compressed release image.
 hdiutil create -size 32m -fs HFS+ -volname "ausxen's MK1212 macOS Launcher" \
     -ov "$rw_image" >/dev/null
 hdiutil attach -nobrowse -noverify -mountpoint "$mountpoint" "$rw_image" >/dev/null
-volume="$mountpoint"
-ditto --norsrc --noqtn "$clean_root/" "$volume/"
-SetFile -a C "$volume"
-hdiutil detach "$volume" >/dev/null
+ditto --norsrc --noqtn "$clean_root/" "$mountpoint/"
+SetFile -a C "$mountpoint"
+hdiutil detach "$mountpoint" >/dev/null
 hdiutil convert "$rw_image" -format UDZO -o "$archive" >/dev/null
-( cd "$dist_root" && shasum -a 256 "${archive:t}" > "${archive:t}.sha256" )
+
+( cd "$dist_root" && shasum -a 256 "${archive:t}" > "${checksum:t}" )
 print "$archive"

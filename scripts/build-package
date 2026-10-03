@@ -1,0 +1,104 @@
+#!/bin/zsh
+set -euo pipefail
+export COPYFILE_DISABLE=1
+
+repo_root="${0:A:h:h}"
+version="${VERSION:-0.8.0}"
+output="${1:-$repo_root/dist/MK1212-macOS-${version}.pkg}"
+signing_identity="${CODESIGN_IDENTITY:--}"
+installer_identity="${INSTALLER_IDENTITY:-}"
+
+if [[ -e "$output" ]]; then
+    print -u2 "Refusing to overwrite existing package: $output"
+    exit 1
+fi
+
+build_root="$(mktemp -d /private/tmp/mk1212-pkg.XXXXXX)"
+trap 'rm -rf "$build_root"' EXIT
+payload="$build_root/payload"
+install_root="$payload/Applications/MK1212 Mac Launcher"
+app_root="$install_root/MK1212 Mac Launcher.app"
+gui_app_root="$app_root/Contents/Resources/MK1212 Launcher UI.app"
+uninstaller_root="$install_root/Uninstall MK1212 Mac Launcher.app"
+runtime_library="$build_root/libmk1212-slot-runtime-patch.dylib"
+launcher_gui="$build_root/mk1212-launcher-gui"
+uninstaller_executable="$build_root/Uninstall MK1212 Mac Launcher"
+component_pkg="$build_root/MK1212MacLauncherComponent.pkg"
+installer_resources="$build_root/installer-resources"
+
+mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
+mkdir -p "$gui_app_root/Contents/MacOS"
+mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
+mkdir -p "$installer_resources"
+mkdir -p "${output:h}"
+
+"$repo_root/scripts/build-runtime-patch" "$runtime_library" >/dev/null
+"$repo_root/scripts/build-launcher-gui" "$launcher_gui" >/dev/null
+"$repo_root/scripts/build-uninstaller" "$uninstaller_executable" >/dev/null
+
+cp "$repo_root/app/Info.plist" "$app_root/Contents/Info.plist"
+cp "$repo_root/app/launcher" "$app_root/Contents/MacOS/MK1212 Mac Launcher"
+cp "$repo_root/src/mk1212_mac_tool.py" "$app_root/Contents/Resources/mk1212_mac_tool.py"
+cp "$runtime_library" "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
+cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212MacLauncher.icns"
+cp "$repo_root/app/gui/Info.plist" "$gui_app_root/Contents/Info.plist"
+cp "$launcher_gui" "$gui_app_root/Contents/MacOS/mk1212-launcher-gui"
+
+cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plist"
+cp "$uninstaller_executable" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
+cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
+cp "$repo_root/INSTALL.txt" "$install_root/README.txt"
+cp "$repo_root/RELEASE-NOTES-0.8.0.md" "$install_root/RELEASE-NOTES-0.8.0.md"
+cp "$repo_root/installer/resources/Welcome.html" "$installer_resources/Welcome.html"
+cp "$repo_root/installer/resources/Conclusion.html" "$installer_resources/Conclusion.html"
+
+chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
+chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py"
+chmod 755 "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
+chmod 755 "$gui_app_root/Contents/MacOS/mk1212-launcher-gui"
+chmod 755 "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
+xattr -cr "$install_root"
+
+# Give the enclosing Applications folder the same Finder icon as the launcher.
+# Finder expects a hidden Icon<CR> file containing an 'icns' resource fork,
+# plus the custom-icon flag on the folder itself.
+folder_icon_source="$build_root/folder-icon.icns"
+folder_icon_resource="$build_root/folder-icon.rsrc"
+folder_icon_file="$install_root/Icon"$'\r'
+cp "$repo_root/app/MK1212MacLauncher.icns" "$folder_icon_source"
+/usr/bin/sips -i "$folder_icon_source" >/dev/null
+/usr/bin/DeRez -only icns "$folder_icon_source" > "$folder_icon_resource"
+/usr/bin/touch "$folder_icon_file"
+/usr/bin/Rez -append "$folder_icon_resource" -o "$folder_icon_file"
+/usr/bin/SetFile -a V "$folder_icon_file"
+/usr/bin/SetFile -a C "$install_root"
+
+sign_args=(--force --deep --sign "$signing_identity")
+if [[ "$signing_identity" != "-" ]]; then
+    sign_args+=(--options runtime --timestamp)
+fi
+codesign "${sign_args[@]}" "$app_root"
+codesign --verify --deep --strict --verbose=2 "$app_root"
+codesign "${sign_args[@]}" "$uninstaller_root"
+codesign --verify --deep --strict --verbose=2 "$uninstaller_root"
+
+pkgbuild \
+    --root "$payload" \
+    --component-plist "$repo_root/installer/components.plist" \
+    --identifier local.mk1212.mac-launcher.pkg \
+    --version "$version" \
+    --install-location / \
+    --scripts "$repo_root/installer/scripts" \
+    "$component_pkg"
+
+product_args=(
+    --distribution "$repo_root/installer/Distribution.xml"
+    --resources "$installer_resources"
+    --package-path "$build_root"
+)
+if [[ -n "$installer_identity" ]]; then
+    product_args+=(--sign "$installer_identity")
+fi
+productbuild "${product_args[@]}" "$output"
+pkgutil --check-signature "$output" || true
+print "$output"

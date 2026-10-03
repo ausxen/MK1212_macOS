@@ -2,8 +2,8 @@ ausxen's MK1212 macOS Launcher
 
 DMG installation
 ----------------
-Open `MK1212_macOS-0.7.0.dmg`, then drag the `MK1212 Mac Launcher` folder
-onto the Applications shortcut. The installed folder is:
+Open `MK1212_macOS-0.8.0.dmg`, then double-click
+`Install MK1212 Mac Launcher.pkg`. The macOS Installer places the launcher in:
 
     /Applications/MK1212 Mac Launcher/
 
@@ -11,14 +11,20 @@ Open `MK1212 Mac Launcher.app` from that folder, or add that app to Steam as a
 non-Steam game. To remove the launcher, close ATTILA and open
 `Uninstall MK1212 Mac Launcher.app`.
 
-Release 0.7.0 enables ten-slot settlements automatically on the supported
-ARM64 Feral ATTILA 1.6.1 build. It patches only the running process; it does not
-edit or re-sign the installed Feral application.
+Release 0.8.0 enables ten-slot settlements automatically on the supported
+ARM64 Feral ATTILA 1.6.1 build. Its heap-only runtime patch changes no executable
+code pages and does not edit or re-sign the installed Feral application.
 
-This community release is ad-hoc signed, not Apple-notarized. After verifying
-the DMG checksum, if macOS reports that Apple could not verify the app, run:
+In the launcher's foreground submod window, check the submods to use and drag
+them into priority order, with highest priority at the top. When Feral's normal
+launcher appears afterward, leave every mod unchecked and start ATTILA normally.
+Use the launcher's `? Help` button for these instructions at any time. The
+`Rebuild Cache` button safely recreates generated compatibility files if needed.
 
-    xattr -dr com.apple.quarantine "/Applications/MK1212 Mac Launcher"
+The embedded apps are ad-hoc signed, and this community package is not
+Apple-notarized. After verifying the DMG checksum, macOS may require you to
+right-click the installer, choose Open, and confirm. You can also use Privacy &
+Security > Open Anyway after a user-initiated launch attempt.
 
 The launcher does not include Total War: ATTILA or Workshop content. Users must
 own the game and subscribe to the required Workshop packs separately.

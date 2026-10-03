@@ -1,0 +1,18 @@
+#!/bin/zsh
+set -euo pipefail
+
+repo_root="${0:A:h:h}"
+output="${1:-$repo_root/build/Uninstall MK1212 Mac Launcher}"
+mkdir -p "${output:h}"
+
+/usr/bin/clang \
+    -fobjc-arc \
+    -mmacosx-version-min=12.0 \
+    -Wall -Wextra \
+    -framework AppKit \
+    -framework Security \
+    "$repo_root/src/mk1212_uninstaller.m" \
+    -o "$output"
+
+/usr/bin/codesign --force --sign - "$output"
+print "$output"

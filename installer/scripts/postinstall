@@ -1,0 +1,15 @@
+#!/bin/zsh
+set -u
+
+target_volume="${3:-/}"
+install_root="${target_volume%/}/Applications/MK1212 Mac Launcher"
+
+if [[ -d "$install_root" ]]; then
+    # Remove Gatekeeper quarantine without stripping the folder's custom icon,
+    # resource forks, or the app bundles' signing metadata.
+    /usr/bin/xattr -dr com.apple.quarantine "$install_root" 2>/dev/null || true
+    # Remove the exact preparation helper shipped by pre-PKG releases.
+    /bin/rm -f -- "$install_root/Prepare MK1212 Mac Launcher.command"
+fi
+
+exit 0

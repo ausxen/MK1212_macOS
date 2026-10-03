@@ -1,0 +1,50 @@
+#!/bin/zsh
+set -euo pipefail
+
+repo_root="${0:A:h:h}"
+if (( $# != 1 )); then
+    print -u2 "Usage: $0 /absolute/path/'MK1212 GUI Test N.app'"
+    exit 2
+fi
+app_root="${1:A}"
+if [[ "${app_root:e:l}" != "app" ]]; then
+    print -u2 "Test output must have an .app extension: $app_root"
+    exit 2
+fi
+if [[ -e "$app_root" ]]; then
+    print -u2 "Refusing to overwrite existing test app: $app_root"
+    exit 1
+fi
+
+build_root="$(mktemp -d /private/tmp/mk1212-test-app.XXXXXX)"
+trap 'rm -rf "$build_root"' EXIT
+runtime_library="$build_root/libmk1212-slot-runtime-patch.dylib"
+launcher_gui="$build_root/mk1212-launcher-gui"
+gui_app_root="$app_root/Contents/Resources/MK1212 Launcher UI.app"
+signing_identity="${CODESIGN_IDENTITY:--}"
+
+"$repo_root/scripts/build-runtime-patch" "$runtime_library" >/dev/null
+"$repo_root/scripts/build-launcher-gui" "$launcher_gui" >/dev/null
+
+mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
+mkdir -p "$gui_app_root/Contents/MacOS"
+cp "$repo_root/app/Info.plist" "$app_root/Contents/Info.plist"
+cp "$repo_root/app/launcher" "$app_root/Contents/MacOS/MK1212 Mac Launcher"
+cp "$repo_root/src/mk1212_mac_tool.py" "$app_root/Contents/Resources/mk1212_mac_tool.py"
+cp "$runtime_library" "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
+cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212MacLauncher.icns"
+cp "$repo_root/app/gui/Info.plist" "$gui_app_root/Contents/Info.plist"
+cp "$launcher_gui" "$gui_app_root/Contents/MacOS/mk1212-launcher-gui"
+
+chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"
+chmod 755 "$app_root/Contents/Resources/mk1212_mac_tool.py"
+chmod 755 "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
+chmod 755 "$gui_app_root/Contents/MacOS/mk1212-launcher-gui"
+xattr -cr "$app_root"
+sign_args=(--force --deep --sign "$signing_identity")
+if [[ "$signing_identity" != "-" ]]; then
+    sign_args+=(--options runtime --timestamp)
+fi
+codesign "${sign_args[@]}" "$app_root"
+codesign --verify --deep --strict --verbose=2 "$app_root"
+print "$app_root"
