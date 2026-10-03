@@ -228,6 +228,143 @@ class TransientProfileTests(unittest.TestCase):
             run.assert_not_called()
             self.assertTrue((root / "state/rebuild-progress.json").is_file())
 
+    def test_supported_executable_passes_launch_preflight(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            game_root = root / "game"
+            executable = game_root / tool.EXECUTABLE_RELATIVE
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"supported executable fixture")
+            state_dir = root / "state"
+            tool.save_json(state_dir / "state.json", {
+                "status": "prepared", "game_root": str(game_root),
+            })
+            args = argparse.Namespace(game_root=None)
+            with patch.object(
+                tool, "sha256_path", return_value=tool.SUPPORTED_RUNTIME_EXECUTABLE_SHA256
+            ):
+                detected_path, digest = tool.preflight_launch_executable(args, state_dir)
+            self.assertEqual(detected_path, executable.resolve())
+            self.assertEqual(digest, tool.SUPPORTED_RUNTIME_EXECUTABLE_SHA256)
+
+    def test_unknown_executable_hash_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            game_root = Path(directory)
+            executable = game_root / tool.EXECUTABLE_RELATIVE
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"unknown executable fixture")
+            with patch.object(tool, "sha256_path", return_value="f" * 64):
+                with self.assertRaises(tool.UnsupportedGameExecutableError) as raised:
+                    tool.validate_supported_game_executable(game_root)
+            self.assertEqual(raised.exception.path, executable)
+            self.assertEqual(raised.exception.detected_sha256, "f" * 64)
+
+    def test_unsupported_executable_stops_before_setup_activation_or_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            game_root = root / "game"
+            executable = game_root / tool.EXECUTABLE_RELATIVE
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"updated executable fixture")
+            state_dir = root / "state"
+            tool.save_json(state_dir / "state.json", {
+                "status": "prepared", "game_root": str(game_root),
+            })
+            args = argparse.Namespace(
+                state_dir=str(state_dir), game_root=None,
+                core_only=False, no_picker=False,
+            )
+            with patch.object(tool, "game_running", return_value=False), \
+                 patch.object(tool, "sha256_path", return_value="e" * 64), \
+                 patch.object(tool, "show_native_error") as show_error, \
+                 patch.object(tool, "prepare_launch_state") as prepare, \
+                 patch.object(tool, "activate_profile") as activate, \
+                 patch.object(tool, "prepare_isolated_home") as isolated_home, \
+                 patch.object(tool.subprocess, "Popen") as popen:
+                with self.assertRaises(tool.NativeErrorDisplayed):
+                    tool.launch_command(args)
+            prepare.assert_not_called()
+            activate.assert_not_called()
+            isolated_home.assert_not_called()
+            popen.assert_not_called()
+            self.assertEqual(show_error.call_args.kwargs["title"], "ATTILA has been updated")
+            self.assertIn("has not been modified", show_error.call_args.kwargs["message"])
+
+    def test_missing_executable_has_distinct_user_facing_error(self):
+        missing = Path("/missing/game") / tool.EXECUTABLE_RELATIVE
+        with self.assertRaises(tool.MissingGameExecutableError) as raised:
+            tool.validate_supported_game_executable(Path("/missing/game"))
+        presentation = tool.executable_error_presentation(raised.exception)
+        self.assertEqual(presentation["title"], "ATTILA could not be found")
+        self.assertNotIn("updated", presentation["message"].casefold())
+        self.assertIn(str(missing), presentation["detail"])
+
+    def test_unsupported_error_presentation_includes_supported_build_and_detail_hash(self):
+        error = tool.UnsupportedGameExecutableError(Path("/game/ATTILA"), "d" * 64)
+        presentation = tool.executable_error_presentation(error)
+        self.assertEqual(presentation["title"], "ATTILA has been updated")
+        self.assertIn("480285.103778", presentation["message"])
+        self.assertIn("stopped rather than applying", presentation["message"])
+        self.assertIn("d" * 64, presentation["detail"])
+
+    def test_executable_hashing_error_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            game_root = Path(directory)
+            executable = game_root / tool.EXECUTABLE_RELATIVE
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"unreadable executable fixture")
+            with patch.object(tool, "sha256_path", side_effect=OSError("read failed")):
+                with self.assertRaises(tool.GameExecutableVerificationError):
+                    tool.validate_supported_game_executable(game_root)
+
+    def test_stale_activation_is_recovered_before_executable_preflight(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_dir = root / "state"
+            game_root = root / "game"
+            tool.save_json(state_dir / "state.json", {
+                "status": "prepared", "game_root": str(game_root),
+            })
+            tool.save_json(state_dir / "activation.json", {"id": "stale"})
+            order = []
+
+            def recover(*_args):
+                order.append("recover")
+
+            def validate(root_arg):
+                order.append("validate")
+                return root_arg / tool.EXECUTABLE_RELATIVE, tool.SUPPORTED_RUNTIME_EXECUTABLE_SHA256
+
+            with patch.object(tool, "recover_stale_activation", side_effect=recover), \
+                 patch.object(tool, "validate_supported_game_executable", side_effect=validate):
+                tool.preflight_launch_executable(argparse.Namespace(game_root=None), state_dir)
+            self.assertEqual(order, ["recover", "validate"])
+
+    def test_workshop_source_change_still_uses_existing_rebuild_flow(self):
+        records = [{"name": "updated.pack"}]
+        state = {"source_packs": records}
+        with patch.object(tool, "changed_source_records", return_value=records), \
+             patch.object(tool, "confirm_source_rebuild", return_value=True) as confirm, \
+             patch.object(tool, "rebuild_profiles_for_current_sources") as rebuild:
+            self.assertTrue(tool.rebuild_changed_workshop_sources_for_launch(
+                Path("/state"), state
+            ))
+        confirm.assert_called_once_with(records)
+        rebuild.assert_called_once_with(Path("/state"), state)
+
+    def test_native_error_helper_receives_error_mode_configuration(self):
+        with patch.object(tool, "launcher_gui_path", return_value=Path("/tmp/gui")), \
+             patch.object(
+                 tool.subprocess, "run",
+                 return_value=tool.subprocess.CompletedProcess([], 0, "", ""),
+             ) as run:
+            tool.show_native_error("ATTILA has been updated", "Stopped safely", "hash")
+        config = json.loads(run.call_args.args[0][1])
+        self.assertEqual(config["mode"], "error")
+        self.assertEqual(config["errorTitle"], "ATTILA has been updated")
+        self.assertEqual(config["errorMessage"], "Stopped safely")
+        self.assertEqual(config["errorDetail"], "hash")
+
     def test_refresh_discovers_new_workshop_pack_without_feral_record(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

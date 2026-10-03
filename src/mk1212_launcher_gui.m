@@ -13,6 +13,9 @@ static NSPasteboardType const MKSubmodRowType = @"local.mk1212.launcher.submod-r
 @property(nonatomic, nullable) NSString *donePath;
 @property(nonatomic, nullable) NSString *progressTitle;
 @property(nonatomic, nullable) NSString *progressDetail;
+@property(nonatomic, nullable) NSString *errorTitle;
+@property(nonatomic, nullable) NSString *errorMessage;
+@property(nonatomic, nullable) NSString *errorDetail;
 @property(nonatomic, nullable) NSString *resultPath;
 @property(nonatomic) NSWindow *window;
 @property(nonatomic, nullable) NSWindow *helpWindow;
@@ -23,6 +26,7 @@ static NSPasteboardType const MKSubmodRowType = @"local.mk1212.launcher.submod-r
 @property(nonatomic) BOOL emittedResult;
 - (instancetype)initWithConfig:(NSDictionary *)config;
 - (void)buildWindow;
+- (void)buildErrorWindow;
 @end
 
 static MKLauncherController *MKController = nil;
@@ -53,6 +57,12 @@ static MKLauncherController *MKController = nil;
         _progressTitle = [progressTitle isKindOfClass:NSString.class] ? progressTitle : nil;
         id progressDetail = config[@"progressDetail"];
         _progressDetail = [progressDetail isKindOfClass:NSString.class] ? progressDetail : nil;
+        id errorTitle = config[@"errorTitle"];
+        _errorTitle = [errorTitle isKindOfClass:NSString.class] ? errorTitle : nil;
+        id errorMessage = config[@"errorMessage"];
+        _errorMessage = [errorMessage isKindOfClass:NSString.class] ? errorMessage : nil;
+        id errorDetail = config[@"errorDetail"];
+        _errorDetail = [errorDetail isKindOfClass:NSString.class] ? errorDetail : nil;
     }
     return self;
 }
@@ -69,6 +79,7 @@ static MKLauncherController *MKController = nil;
 
 - (BOOL)windowShouldClose:(NSWindow *)sender {
     if ([self.mode isEqualToString:@"progress"] && sender == self.window) return NO;
+    if ([self.mode isEqualToString:@"error"] && sender == self.window) return YES;
     if (sender == self.window && !self.emittedResult) {
         [self emitAction:@"cancel"];
         return NO;
@@ -79,6 +90,10 @@ static MKLauncherController *MKController = nil;
 - (void)buildWindow {
     if ([self.mode isEqualToString:@"progress"]) {
         [self buildProgressWindow];
+        return;
+    }
+    if ([self.mode isEqualToString:@"error"]) {
+        [self buildErrorWindow];
         return;
     }
     NSWindow *window = [[NSWindow alloc]
@@ -355,6 +370,79 @@ static MKLauncherController *MKController = nil;
     [self pollProgress:nil];
 }
 
+- (void)buildErrorWindow {
+    NSWindow *window = [[NSWindow alloc]
+        initWithContentRect:NSMakeRect(0, 0, 620, 360)
+                  styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                    backing:NSBackingStoreBuffered
+                      defer:NO];
+    window.title = @"ausxen's MK1212 macOS Launcher";
+    window.level = NSFloatingWindowLevel;
+    window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+                                NSWindowCollectionBehaviorFullScreenAuxiliary;
+    window.releasedWhenClosed = NO;
+    window.delegate = self;
+
+    NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 620, 360)];
+    window.contentView = content;
+
+    NSImageView *icon = [[NSImageView alloc] init];
+    icon.image = [NSImage imageNamed:NSImageNameCaution];
+    icon.imageScaling = NSImageScaleProportionallyUpOrDown;
+
+    NSTextField *title = [NSTextField labelWithString:self.errorTitle ?: @"Launch stopped"];
+    title.font = [NSFont systemFontOfSize:22 weight:NSFontWeightSemibold];
+
+    NSTextField *message = [NSTextField wrappingLabelWithString:self.errorMessage ?: @""];
+    message.font = [NSFont systemFontOfSize:14];
+
+    NSTextField *detail = [NSTextField wrappingLabelWithString:self.errorDetail ?: @""];
+    detail.font = [NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular];
+    detail.textColor = NSColor.secondaryLabelColor;
+    detail.selectable = YES;
+    detail.hidden = self.errorDetail.length == 0;
+
+    NSButton *okButton = [NSButton buttonWithTitle:@"OK"
+                                           target:self action:@selector(dismissError:)];
+    okButton.bezelStyle = NSBezelStyleRounded;
+    okButton.keyEquivalent = @"\r";
+
+    for (NSView *view in @[icon, title, message, detail, okButton]) {
+        view.translatesAutoresizingMaskIntoConstraints = NO;
+        [content addSubview:view];
+    }
+    [NSLayoutConstraint activateConstraints:@[
+        [icon.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:24],
+        [icon.topAnchor constraintEqualToAnchor:content.topAnchor constant:26],
+        [icon.widthAnchor constraintEqualToConstant:48],
+        [icon.heightAnchor constraintEqualToConstant:48],
+        [title.leadingAnchor constraintEqualToAnchor:icon.trailingAnchor constant:16],
+        [title.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-26],
+        [title.topAnchor constraintEqualToAnchor:content.topAnchor constant:26],
+        [message.leadingAnchor constraintEqualToAnchor:title.leadingAnchor],
+        [message.trailingAnchor constraintEqualToAnchor:title.trailingAnchor],
+        [message.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:14],
+        [detail.leadingAnchor constraintEqualToAnchor:title.leadingAnchor],
+        [detail.trailingAnchor constraintEqualToAnchor:title.trailingAnchor],
+        [detail.topAnchor constraintEqualToAnchor:message.bottomAnchor constant:16],
+        [okButton.trailingAnchor constraintEqualToAnchor:title.trailingAnchor],
+        [okButton.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-22],
+        [okButton.topAnchor constraintGreaterThanOrEqualToAnchor:detail.bottomAnchor constant:18],
+    ]];
+
+    self.window = window;
+    [window center];
+    [window makeKeyAndOrderFront:nil];
+    [window orderFrontRegardless];
+    [NSApp activateIgnoringOtherApps:YES];
+}
+
+- (void)dismissError:(id)sender {
+    (void)sender;
+    [self.window orderOut:nil];
+    [NSApp terminate:nil];
+}
+
 - (NSDictionary *)dictionaryAtPath:(NSString *)path {
     if (path.length == 0) return nil;
     NSData *data = [NSData dataWithContentsOfFile:path];
@@ -470,14 +558,17 @@ int main(int argc, const char *argv[]) {
         if (argc == 2) {
             input = [[[NSString alloc] initWithUTF8String:argv[1]]
                 dataUsingEncoding:NSUTF8StringEncoding];
+        } else if (argc == 3 && strcmp(argv[1], "--config") == 0) {
+            NSString *configPath = [[NSString alloc] initWithUTF8String:argv[2]];
+            input = [NSData dataWithContentsOfFile:configPath];
         } else if (argc == 5 && strcmp(argv[1], "--config") == 0 &&
                    strcmp(argv[3], "--result") == 0) {
             NSString *configPath = [[NSString alloc] initWithUTF8String:argv[2]];
             resultPath = [[NSString alloc] initWithUTF8String:argv[4]];
             input = [NSData dataWithContentsOfFile:configPath];
         } else {
-            fprintf(stderr, "Usage: mk1212-launcher-gui '<configuration-json>' or "
-                            "--config PATH --result PATH\n");
+            fprintf(stderr, "Usage: mk1212-launcher-gui '<configuration-json>', "
+                            "--config PATH, or --config PATH --result PATH\n");
             return 2;
         }
         NSError *error = nil;

@@ -18,6 +18,10 @@ delayed clicks and render-surface scaling after several minutes of play.
   from the installed Workshop sources.
 - Adds foreground progress windows for initial preparation, cache rebuilds, and
   first-time preparation of new submod combinations.
+- Detects an unknown or updated Feral ATTILA executable before cache/profile
+  preparation and shows a clear foreground compatibility message. The launcher
+  does not activate mods, launch ATTILA, or apply the runtime patch in this
+  case. A missing executable remains a separate error.
 - Removes nonessential macOS notification banners. Detailed progress remains
   available in the launcher log.
 - Adds a standard macOS installer package. It installs a custom-icon
@@ -34,7 +38,9 @@ battles with multiple ten-building-slot settlements. The tested optional set
 included Tycherious' 1212 Tweaks, Realistic Smoke, and Tycherious' 4TPY.
 
 Version 0.8.0 remains limited to the Apple Silicon Feral ATTILA 1.6.1 build
-`480285.103778`. Other executable hashes are refused.
+`480285.103778`. Other executable hashes are refused. A Steam/Feral executable
+update may therefore require a newer launcher release; this refusal is a safety
+measure and does not indicate that the user's game installation is damaged.
 
 Thanks to:
 

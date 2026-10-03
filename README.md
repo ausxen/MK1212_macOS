@@ -52,6 +52,12 @@ Ten-slot settlements are enabled automatically on the supported Feral build.
 The obsolete Windows-only “Increase Slots” button and executable prompt are
 hidden because the macOS runtime fix is already active before campaign Lua runs.
 
+If Steam or Feral updates ATTILA itself, this launcher may temporarily stop
+supporting the installed executable. It will show a clear compatibility message
+and stop before activating mods, launching ATTILA, or applying the ten-slot
+runtime patch. This is a deliberate safety measure—not evidence that the game
+installation is damaged. Check for a newer launcher release before trying again.
+
 ### What It Does
 
 _Boring list of how this thing functions._
@@ -190,6 +196,11 @@ ARM64 Feral 1.6.1 build `480285.103778`, whose executable SHA-256 is
 `13f5d523019f291f489353fa5d3661bc9a668bb2b0375d6c3201e01d74525c5e`.
 Any different build is refused until its offsets and instruction guards are
 independently audited.
+
+An ATTILA executable update is different from a Workshop update. An unknown
+ATTILA executable produces a foreground “ATTILA has been updated” safeguard and
+is not launched. Changed MK1212 or submod Workshop files continue through the
+normal compatibility-cache rebuild flow.
 
 Cached files live under `TotalWarAttilaData/.mk1212-cache`; selected generated packs, loose Lua, `used_mods.txt`, and manifest entries exist in the live tree only for a custom launcher session.
 

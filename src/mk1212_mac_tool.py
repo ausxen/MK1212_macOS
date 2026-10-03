@@ -36,6 +36,8 @@ PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-no-windows-helper-ui-v4-pack
 SUPPORTED_RUNTIME_EXECUTABLE_SHA256 = (
     "13f5d523019f291f489353fa5d3661bc9a668bb2b0375d6c3201e01d74525c5e"
 )
+SUPPORTED_RUNTIME_DESCRIPTION = "Feral ATTILA 1.6.1 build 480285.103778"
+NATIVE_ERROR_EXIT_CODE = 3
 DEFAULT_STATE = Path.home() / "Library/Application Support/MK1212 Mac Launcher"
 FERAL_STATE = Path.home() / "Library/Application Support/Feral Interactive/Total War ATTILA"
 GENERATED_PREFIX = "zzz_mk1212shim_"
@@ -92,6 +94,30 @@ STOCK_PACK_NAMES = {
 
 class ToolError(RuntimeError):
     pass
+
+
+class MissingGameExecutableError(ToolError):
+    def __init__(self, path: Path):
+        self.path = path
+        super().__init__(f"selected ATTILA executable is missing: {path}")
+
+
+class UnsupportedGameExecutableError(ToolError):
+    def __init__(self, path: Path, detected_sha256: str):
+        self.path = path
+        self.detected_sha256 = detected_sha256
+        super().__init__(
+            f"unsupported ATTILA executable SHA-256 {detected_sha256}; "
+            f"expected {SUPPORTED_RUNTIME_EXECUTABLE_SHA256}"
+        )
+
+
+class GameExecutableVerificationError(ToolError):
+    pass
+
+
+class NativeErrorDisplayed(ToolError):
+    """A fatal error already shown in the launcher's native foreground UI."""
 
 
 @dataclass(frozen=True)
@@ -710,10 +736,28 @@ def discover_game_root(explicit=None) -> Path:
             match = re.search(r'"installdir"\s+"([^"]+)"', acf.read_text(errors="replace"))
             if match:
                 candidates.append(library / "steamapps/common" / match.group(1))
-    valid = [p for p in candidates if (p / "Total War ATTILA.app/Contents/MacOS/Total War ATTILA").is_file()]
+    valid = [p for p in candidates if (p / EXECUTABLE_RELATIVE).is_file()]
+    if len(candidates) == 1 and not valid:
+        raise MissingGameExecutableError(candidates[0] / EXECUTABLE_RELATIVE)
     if len(valid) != 1:
         raise ToolError(f"expected one ATTILA installation, found {len(valid)}")
     return valid[0]
+
+
+def validate_supported_game_executable(game_root: Path) -> tuple[Path, str]:
+    """Return the supported executable and digest, failing closed otherwise."""
+    executable = Path(game_root) / EXECUTABLE_RELATIVE
+    if not executable.is_file():
+        raise MissingGameExecutableError(executable)
+    try:
+        digest = sha256_path(executable)
+    except OSError as exc:
+        raise GameExecutableVerificationError(
+            f"could not verify the ATTILA executable at {executable}: {exc}"
+        ) from exc
+    if digest != SUPPORTED_RUNTIME_EXECUTABLE_SHA256:
+        raise UnsupportedGameExecutableError(executable, digest)
+    return executable, digest
 
 
 def inventory_packs(game_root: Path) -> dict[str, list[Path]]:
@@ -1524,6 +1568,10 @@ LAUNCHER_HELP = """Using the MK1212 macOS Launcher
 
 4. Feral's Total War: ATTILA launcher will appear next. Do not enable any mods there. Leave every mod unchecked and start the game normally. This launcher has already activated the selected MK1212 packs and submods in the correct order.
 
+ATTILA Updates
+
+This launcher deliberately supports only Feral ATTILA 1.6.1 build 480285.103778. If Steam or Feral changes the ATTILA executable, the launcher stops before enabling mods or applying the ten-slot patch and asks you to check for a newer launcher version. This is a safety measure and does not mean your game installation is damaged.
+
 Rebuild Cache
 
 Use Rebuild Cache only for troubleshooting—for example, after a Workshop update or if the game is not reflecting your selected submods. It safely discards the launcher's generated compatibility packs and recreates them from the installed Workshop files. It does not modify the original Workshop downloads.
@@ -1548,6 +1596,66 @@ def launcher_gui_path() -> Path:
 def launcher_gui_app(gui_executable: Path) -> Path | None:
     return next((parent for parent in gui_executable.parents
                  if parent.suffix.casefold() == ".app"), None)
+
+
+def executable_error_presentation(exc: ToolError) -> dict[str, str]:
+    if isinstance(exc, UnsupportedGameExecutableError):
+        return {
+            "title": "ATTILA has been updated",
+            "message": (
+                f"This version of MK1212 Mac Launcher has only been tested with "
+                f"{SUPPORTED_RUNTIME_DESCRIPTION}.\n\n"
+                "Your ATTILA executable has changed, so the launcher stopped rather than "
+                "applying an untested compatibility patch.\n\n"
+                "Check for a newer version of MK1212 Mac Launcher.\n\n"
+                "Your game installation has not been modified."
+            ),
+            "detail": f"Detected executable SHA-256: {exc.detected_sha256}",
+        }
+    if isinstance(exc, MissingGameExecutableError):
+        return {
+            "title": "ATTILA could not be found",
+            "message": (
+                "The launcher could not find the Feral ATTILA executable where Steam "
+                "reported the game installation.\n\n"
+                "Verify or reinstall Total War: ATTILA in Steam, then try again.\n\n"
+                "No compatibility patch was applied."
+            ),
+            "detail": f"Expected executable: {exc.path}",
+        }
+    raise TypeError(f"no native executable-error presentation for {type(exc).__name__}")
+
+
+def show_native_error(title: str, message: str, detail: str = "") -> None:
+    config = json.dumps({
+        "mode": "error", "items": [], "actionLabel": "OK", "helpText": "",
+        "status": None, "errorTitle": title, "errorMessage": message,
+        "errorDetail": detail,
+    })
+    gui_executable = launcher_gui_path()
+    gui_app = launcher_gui_app(gui_executable)
+    if gui_app is not None:
+        with tempfile.TemporaryDirectory(prefix="mk1212-launcher-error-") as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text(config, encoding="utf-8")
+            result = subprocess.run(
+                ["/usr/bin/open", "-n", "-W", str(gui_app), "--args",
+                 "--config", str(config_path)],
+                capture_output=True, text=True,
+            )
+    else:
+        result = subprocess.run([str(gui_executable), config], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise ToolError("launcher error window failed: " + result.stderr.strip())
+
+
+def show_executable_compatibility_error(exc: ToolError) -> None:
+    presentation = executable_error_presentation(exc)
+    try:
+        show_native_error(**presentation)
+    except ToolError as ui_exc:
+        raise ToolError(f"{exc}; additionally, the native error window failed: {ui_exc}") from exc
+    raise NativeErrorDisplayed(str(exc)) from exc
 
 
 def choose_optional_packs(state: dict, action_label: str = "Launch",
@@ -2133,21 +2241,51 @@ def prepare_launch_state(args: argparse.Namespace, state_dir: Path) -> dict:
     return load_state(state_dir)
 
 
+def preflight_launch_executable(args: argparse.Namespace, state_dir: Path) -> tuple[Path, str]:
+    """Recover stale activation, then reject missing or unknown game binaries early."""
+    state_file = state_dir / "state.json"
+    state = load_state(state_dir) if state_file.is_file() else None
+    if state is not None and (state_dir / "activation.json").is_file():
+        recover_stale_activation(state_dir, state)
+    recorded_root = state.get("game_root") if state is not None else None
+    game_root = (Path(recorded_root).expanduser().resolve()
+                 if isinstance(recorded_root, str) and recorded_root
+                 else discover_game_root(args.game_root))
+    return validate_supported_game_executable(game_root)
+
+
+def rebuild_changed_workshop_sources_for_launch(state_dir: Path, state: dict) -> bool:
+    """Keep Workshop refresh behavior separate from executable compatibility."""
+    changed = changed_source_records(state)
+    if not changed:
+        return True
+    if not confirm_source_rebuild(changed):
+        print("Workshop cache rebuild cancelled.")
+        return False
+    rebuild_profiles_for_current_sources(state_dir, state)
+    return True
+
+
 def launch_command(args: argparse.Namespace) -> None:
     if game_running():
         raise ToolError("ATTILA is already running; launch is refused")
     state_dir = Path(args.state_dir).expanduser().resolve()
+    try:
+        preflight_launch_executable(args, state_dir)
+    except (MissingGameExecutableError, UnsupportedGameExecutableError) as exc:
+        show_executable_compatibility_error(exc)
     state = prepare_launch_state(args, state_dir)
     if state.get("status") != "prepared":
         raise ToolError(f"state is {state.get('status')!r}, not prepared")
     recover_stale_activation(state_dir, state)
+    game_root = Path(state["game_root"])
+    try:
+        original_executable, executable_sha256 = validate_supported_game_executable(game_root)
+    except (MissingGameExecutableError, UnsupportedGameExecutableError) as exc:
+        show_executable_compatibility_error(exc)
     refresh_optional_sources(state)
-    changed = changed_source_records(state)
-    if changed:
-        if not confirm_source_rebuild(changed):
-            print("Workshop cache rebuild cancelled.")
-            return
-        rebuild_profiles_for_current_sources(state_dir, state)
+    if not rebuild_changed_workshop_sources_for_launch(state_dir, state):
+        return
     verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
     if args.core_only:
         picked = []
@@ -2170,17 +2308,11 @@ def launch_command(args: argparse.Namespace) -> None:
     names = selected_names(state, picked)
     profile = ensure_profile_with_progress(state_dir, state, names)
     save_json(state_dir / "state.json", state)
-    game_root = Path(state["game_root"])
-    original_executable = game_root / EXECUTABLE_RELATIVE
-    executable = original_executable
-    if not executable.is_file():
-        raise ToolError(f"selected ATTILA executable is missing: {executable}")
-    executable_sha256 = sha256_path(executable)
-    if executable_sha256 != SUPPORTED_RUNTIME_EXECUTABLE_SHA256:
-        raise ToolError(
-            "the heap-only ten-slot patch supports only Feral ATTILA 1.6.1 build 480285.103778; "
-            f"found executable SHA-256 {executable_sha256}"
-        )
+    try:
+        executable, executable_sha256 = validate_supported_game_executable(game_root)
+    except (MissingGameExecutableError, UnsupportedGameExecutableError) as exc:
+        show_executable_compatibility_error(exc)
+    original_executable = executable
     runtime_library = Path(__file__).resolve().with_name("libmk1212-slot-runtime-patch.dylib")
     if not runtime_library.is_file():
         # Source-tree commands use the reproducible build output; packaged apps
@@ -2276,6 +2408,9 @@ def main() -> int:
     args = make_parser().parse_args()
     try:
         args.func(args)
+    except NativeErrorDisplayed as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return NATIVE_ERROR_EXIT_CODE
     except (ToolError, OSError, ValueError, KeyError, ET.ParseError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

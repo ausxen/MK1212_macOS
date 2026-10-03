@@ -19,9 +19,8 @@ fi
 
 "$python_bin" "$tool_path" launch 2>"$error_log"
 exit_code=$?
-if (( exit_code != 0 )); then
+if (( exit_code != 0 && exit_code != 3 )); then
     message="$(tail -n 8 "$error_log")"
     /usr/bin/osascript -e 'on run argv' -e 'display alert "MK1212 Mac Launcher" message (item 1 of argv) as critical buttons {"OK"} default button "OK"' -e 'end run' "$message"
 fi
 exit $exit_code
-
