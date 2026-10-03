@@ -52,13 +52,28 @@ footer {
 .hero {
   position: relative;
   isolation: isolate;
-  padding: 88px 0 42px;
+  overflow: hidden;
+  margin: 28px 0;
+  padding: 88px clamp(24px, 5vw, 42px) 42px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.14);
   text-align: center;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.67);
+  pointer-events: none;
 }
 
 .hero > *:not(.hero-art) {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 .eyebrow {
@@ -192,7 +207,7 @@ h3 {
   padding: clamp(24px, 5vw, 42px);
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: rgba(24, 27, 31, 0.92);
+  background: rgba(0, 0, 0, 0.67);
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.14);
 }
 
