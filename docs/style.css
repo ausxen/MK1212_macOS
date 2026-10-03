@@ -168,9 +168,10 @@ h3 {
   position: absolute;
   z-index: 0;
   top: 150px;
-  right: -130px;
+  left: 50%;
   width: min(900px, 86vw);
   height: auto;
+  transform: translateX(-50%);
   opacity: 0.28;
   pointer-events: none;
   user-select: none;
@@ -292,12 +293,13 @@ footer p {
   .hero-art {
     position: relative;
     top: auto;
-    right: auto;
+    left: 50%;
     z-index: 0;
     display: block;
     width: min(760px, 112%);
     max-width: none;
-    margin: 28px -6% -4px auto;
+    margin: 28px 0 -4px;
+    transform: translateX(-50%);
     opacity: 0.78;
   }
 
