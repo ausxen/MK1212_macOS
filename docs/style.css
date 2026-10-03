@@ -89,13 +89,16 @@ h1 {
   letter-spacing: -0.045em;
 }
 
-.byline {
-  width: fit-content;
-  max-width: 100%;
+.hero-topplate {
+  width: min(980px, 100%);
   margin: 0 auto;
-  padding: 5px 11px;
-  border-radius: 8px;
+  padding: 14px 22px 16px;
+  border-radius: 12px;
   background: rgba(0, 0, 0, 0.52);
+}
+
+.byline {
+  margin: 0 auto;
   color: var(--muted);
   font-size: 0.96rem;
 }
@@ -120,24 +123,24 @@ h3 {
   margin-top: 0;
 }
 
+.hero-actionplate {
+  width: min(820px, 100%);
+  margin: 270px auto 0;
+  padding: 14px 18px 16px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.52);
+}
+
 .lede {
   max-width: 780px;
-  margin: 270px auto 0;
-  padding: 8px 14px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.52);
+  margin: 0 auto;
   color: var(--muted);
   font-size: clamp(1.08rem, 2.4vw, 1.35rem);
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9);
 }
 
 .hero-note {
-  width: fit-content;
-  max-width: 100%;
   margin: 12px auto 0;
-  padding: 4px 10px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.52);
   color: var(--text);
   font-weight: 650;
 }
@@ -191,12 +194,7 @@ h3 {
 }
 
 .compatibility {
-  width: fit-content;
-  max-width: 100%;
   margin: 0 auto;
-  padding: 4px 10px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.52);
   color: var(--muted);
   font-size: 0.95rem;
 }
@@ -344,7 +342,7 @@ footer p {
     filter: brightness(0.84) saturate(0.92);
   }
 
-  .lede {
+  .hero-actionplate {
     margin-top: 0;
   }
 
