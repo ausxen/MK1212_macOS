@@ -50,30 +50,14 @@ footer {
 }
 
 .hero {
-  position: relative;
-  isolation: isolate;
   overflow: hidden;
   margin: 28px 0;
   padding: 88px clamp(24px, 5vw, 42px) 42px;
   border: 1px solid var(--border);
   border-radius: 18px;
+  background: rgba(0, 0, 0, 0.25);
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.14);
   text-align: center;
-}
-
-.hero::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  border-radius: inherit;
-  background: rgba(0, 0, 0, 0.45);
-  pointer-events: none;
-}
-
-.hero > *:not(.hero-art) {
-  position: relative;
-  z-index: 2;
 }
 
 .eyebrow {
@@ -99,7 +83,7 @@ h1 {
 }
 
 .byline {
-  margin: 0 auto 22px;
+  margin: 0 auto 28px;
   color: var(--muted);
   font-size: 0.96rem;
 }
@@ -180,30 +164,11 @@ h3 {
 }
 
 .hero-art {
-  position: absolute;
-  z-index: 0;
-  top: 175px;
-  left: 50%;
-  width: min(920px, 90vw);
+  display: block;
+  width: min(820px, 96%);
   height: auto;
-  transform: translateX(-50%);
-  opacity: 0.55;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    transparent 8%,
-    rgba(0, 0, 0, 0.35) 28%,
-    black 55%,
-    black 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    transparent 8%,
-    rgba(0, 0, 0, 0.35) 28%,
-    black 55%,
-    black 100%
-  );
+  margin: 18px auto 54px;
+  opacity: 0.92;
   pointer-events: none;
   user-select: none;
 }
@@ -212,7 +177,7 @@ h3 {
   display: block;
   width: min(900px, 100%);
   height: auto;
-  margin: 40px auto 0;
+  margin: 82px auto 0;
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--shadow);
@@ -322,18 +287,10 @@ footer p {
   }
 
   .hero-art {
-    position: relative;
-    top: auto;
-    left: 50%;
-    z-index: 0;
-    display: block;
-    width: min(760px, 112%);
+    width: min(760px, 108%);
     max-width: none;
-    margin: 28px 0 -4px;
-    transform: translateX(-50%);
-    opacity: 0.78;
-    -webkit-mask-image: none;
-    mask-image: none;
+    margin: 18px -4% 42px;
+    opacity: 0.92;
   }
 
   .screenshot-grid,
