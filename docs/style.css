@@ -90,7 +90,12 @@ h1 {
 }
 
 .byline {
+  width: fit-content;
+  max-width: 100%;
   margin: 0 auto;
+  padding: 5px 11px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.52);
   color: var(--muted);
   font-size: 0.96rem;
 }
@@ -118,13 +123,21 @@ h3 {
 .lede {
   max-width: 780px;
   margin: 270px auto 0;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.52);
   color: var(--muted);
   font-size: clamp(1.08rem, 2.4vw, 1.35rem);
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9);
 }
 
 .hero-note {
-  margin-top: 12px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 12px auto 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.52);
   color: var(--text);
   font-weight: 650;
 }
@@ -165,8 +178,25 @@ h3 {
   color: var(--text);
 }
 
+.hero .button.secondary {
+  border-color: #656d76;
+  background: rgba(72, 77, 84, 0.94);
+  color: var(--text);
+}
+
+.hero .button.secondary:hover {
+  border-color: #7a838d;
+  background: rgba(91, 97, 105, 0.98);
+  color: var(--text);
+}
+
 .compatibility {
-  margin: 0;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.52);
   color: var(--muted);
   font-size: 0.95rem;
 }
@@ -180,8 +210,8 @@ h3 {
   max-width: none;
   height: auto;
   transform: translateX(-50%);
-  opacity: 0.88;
-  filter: brightness(0.72) saturate(0.92);
+  opacity: 0.68;
+  filter: brightness(0.78) saturate(0.92);
   pointer-events: none;
   user-select: none;
 }
@@ -310,8 +340,8 @@ footer p {
     height: auto;
     margin: 18px -6% 34px;
     transform: none;
-    opacity: 0.9;
-    filter: brightness(0.82) saturate(0.92);
+    opacity: 0.82;
+    filter: brightness(0.84) saturate(0.92);
   }
 
   .lede {
