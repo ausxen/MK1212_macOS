@@ -1,3 +1,5 @@
+![MK1212 Mac Launcher social preview](docs/assets/page_img/social-preview.jpg)
+
 # MK1212 Mac Launcher
 
 **You want to play MK1212 on your Mac. So did I. And you'd probably rather be gaming than reading a GitHub page. Fair.**
