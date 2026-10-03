@@ -1,0 +1,265 @@
+:root {
+  color-scheme: dark;
+  --bg: #111315;
+  --panel: #181b1f;
+  --panel-soft: #1f2328;
+  --text: #f2f3f5;
+  --muted: #aeb4bd;
+  --border: #30363d;
+  --accent: #d8b46a;
+  --accent-strong: #edc779;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top, rgba(216, 180, 106, 0.07), transparent 34rem),
+    var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  line-height: 1.6;
+}
+
+a {
+  color: var(--accent-strong);
+}
+
+a:hover {
+  color: #ffe0a3;
+}
+
+a:focus-visible,
+.button:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 4px;
+}
+
+main,
+footer {
+  width: min(1080px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.hero {
+  padding: 88px 0 42px;
+  text-align: center;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.15;
+}
+
+h1 {
+  max-width: 900px;
+  margin: 0 auto 20px;
+  font-size: clamp(2.6rem, 7vw, 5.4rem);
+  letter-spacing: -0.045em;
+}
+
+h2 {
+  margin-top: 0;
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  letter-spacing: -0.025em;
+}
+
+h3 {
+  margin-top: 0;
+}
+
+.lede {
+  max-width: 780px;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: clamp(1.08rem, 2.4vw, 1.35rem);
+}
+
+.hero-note {
+  margin-top: 12px;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin: 30px 0 14px;
+}
+
+.button {
+  display: inline-block;
+  padding: 13px 20px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent);
+  color: #17130c;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.button:hover {
+  background: var(--accent-strong);
+  color: #17130c;
+}
+
+.button.secondary {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text);
+}
+
+.button.secondary:hover {
+  border-color: #59616b;
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.compatibility {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.hero-shot {
+  display: block;
+  width: min(900px, 100%);
+  height: auto;
+  margin: 40px auto 0;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.section {
+  margin: 28px 0;
+  padding: clamp(24px, 5vw, 42px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(24, 27, 31, 0.92);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.14);
+}
+
+.steps {
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+.steps li {
+  margin: 0 0 12px;
+  padding-left: 4px;
+}
+
+.steps li:last-child {
+  margin-bottom: 0;
+}
+
+.punchline {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.shot-card {
+  margin: 0;
+}
+
+.shot-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.shot-card figcaption {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.support-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0 28px;
+}
+
+.support-card {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+
+.support-card strong,
+.support-card span {
+  display: block;
+}
+
+.support-card span {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.small-print {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+footer {
+  padding: 28px 0 64px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+footer p {
+  margin: 0 0 8px;
+}
+
+@media (max-width: 760px) {
+  .hero {
+    padding-top: 58px;
+  }
+
+  .screenshot-grid,
+  .support-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section {
+    padding: 24px;
+  }
+}
