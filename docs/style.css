@@ -67,7 +67,7 @@ footer {
   inset: 0;
   z-index: 1;
   border-radius: inherit;
-  background: rgba(0, 0, 0, 0.38);
+  background: rgba(0, 0, 0, 0.25);
   pointer-events: none;
 }
 
@@ -207,7 +207,7 @@ h3 {
   padding: clamp(24px, 5vw, 42px);
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: rgba(0, 0, 0, 0.38);
+  background: rgba(0, 0, 0, 0.25);
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.14);
 }
 
