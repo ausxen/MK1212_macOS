@@ -50,14 +50,21 @@ footer {
 }
 
 .hero {
+  position: relative;
+  isolation: isolate;
   overflow: hidden;
   margin: 28px 0;
-  padding: 88px clamp(24px, 5vw, 42px) 42px;
+  padding: 88px clamp(24px, 5vw, 42px) 56px;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: rgba(0, 0, 0, 0.25);
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.14);
   text-align: center;
+}
+
+.hero > *:not(.hero-art) {
+  position: relative;
+  z-index: 2;
 }
 
 .eyebrow {
@@ -83,7 +90,7 @@ h1 {
 }
 
 .byline {
-  margin: 0 auto 28px;
+  margin: 0 auto;
   color: var(--muted);
   font-size: 0.96rem;
 }
@@ -110,9 +117,10 @@ h3 {
 
 .lede {
   max-width: 780px;
-  margin: 0 auto;
+  margin: 270px auto 0;
   color: var(--muted);
   font-size: clamp(1.08rem, 2.4vw, 1.35rem);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9);
 }
 
 .hero-note {
@@ -164,11 +172,16 @@ h3 {
 }
 
 .hero-art {
-  display: block;
-  width: min(820px, 96%);
+  position: absolute;
+  z-index: 1;
+  top: 132px;
+  left: 50%;
+  width: min(1240px, 125%);
+  max-width: none;
   height: auto;
-  margin: 18px auto 54px;
-  opacity: 0.92;
+  transform: translateX(-50%);
+  opacity: 0.88;
+  filter: brightness(0.72) saturate(0.92);
   pointer-events: none;
   user-select: none;
 }
@@ -177,7 +190,7 @@ h3 {
   display: block;
   width: min(900px, 100%);
   height: auto;
-  margin: 82px auto 0;
+  margin: 120px auto 0;
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--shadow);
@@ -287,10 +300,26 @@ footer p {
   }
 
   .hero-art {
-    width: min(760px, 108%);
+    position: relative;
+    top: auto;
+    left: auto;
+    z-index: 1;
+    display: block;
+    width: min(760px, 112%);
     max-width: none;
-    margin: 18px -4% 42px;
-    opacity: 0.92;
+    height: auto;
+    margin: 18px -6% 34px;
+    transform: none;
+    opacity: 0.9;
+    filter: brightness(0.82) saturate(0.92);
+  }
+
+  .lede {
+    margin-top: 0;
+  }
+
+  .hero-shot {
+    margin-top: 72px;
   }
 
   .screenshot-grid,
