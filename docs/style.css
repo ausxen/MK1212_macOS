@@ -67,7 +67,7 @@ footer {
   inset: 0;
   z-index: 1;
   border-radius: inherit;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.45);
   pointer-events: none;
 }
 
@@ -182,12 +182,28 @@ h3 {
 .hero-art {
   position: absolute;
   z-index: 0;
-  top: 150px;
+  top: 175px;
   left: 50%;
-  width: min(900px, 86vw);
+  width: min(920px, 90vw);
   height: auto;
   transform: translateX(-50%);
-  opacity: 0.28;
+  opacity: 0.55;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 8%,
+    rgba(0, 0, 0, 0.35) 28%,
+    black 55%,
+    black 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 8%,
+    rgba(0, 0, 0, 0.35) 28%,
+    black 55%,
+    black 100%
+  );
   pointer-events: none;
   user-select: none;
 }
@@ -316,6 +332,8 @@ footer p {
     margin: 28px 0 -4px;
     transform: translateX(-50%);
     opacity: 0.78;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .screenshot-grid,
