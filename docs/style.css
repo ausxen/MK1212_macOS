@@ -50,8 +50,15 @@ footer {
 }
 
 .hero {
+  position: relative;
+  isolation: isolate;
   padding: 88px 0 42px;
   text-align: center;
+}
+
+.hero > *:not(.hero-art) {
+  position: relative;
+  z-index: 1;
 }
 
 .eyebrow {
@@ -71,9 +78,25 @@ h3 {
 
 h1 {
   max-width: 900px;
-  margin: 0 auto 20px;
+  margin: 0 auto 10px;
   font-size: clamp(2.6rem, 7vw, 5.4rem);
   letter-spacing: -0.045em;
+}
+
+.byline {
+  margin: 0 auto 22px;
+  color: var(--muted);
+  font-size: 0.96rem;
+}
+
+.byline a {
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.byline a:hover {
+  text-decoration: underline;
 }
 
 h2 {
@@ -139,6 +162,18 @@ h3 {
   margin: 0;
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.hero-art {
+  position: absolute;
+  z-index: 0;
+  top: 150px;
+  right: -130px;
+  width: min(900px, 86vw);
+  height: auto;
+  opacity: 0.28;
+  pointer-events: none;
+  user-select: none;
 }
 
 .hero-shot {
@@ -252,6 +287,18 @@ footer p {
 @media (max-width: 760px) {
   .hero {
     padding-top: 58px;
+  }
+
+  .hero-art {
+    position: relative;
+    top: auto;
+    right: auto;
+    z-index: 0;
+    display: block;
+    width: min(760px, 112%);
+    max-width: none;
+    margin: 28px -6% -4px auto;
+    opacity: 0.78;
   }
 
   .screenshot-grid,
