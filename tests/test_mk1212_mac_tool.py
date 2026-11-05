@@ -545,16 +545,53 @@ class TransientProfileTests(unittest.TestCase):
         self.assertNotIn(b'MK1212_10slots.exe', patched)
         self.assertEqual(len(repairs), 1)
 
-    def test_appdata_paths_are_left_unchanged_pending_a_b_test(self):
+    def test_preferences_cleanup_returns_early_without_appdata(self):
         source = (
-            b'\tlocal army_setups_path = os.getenv("APPDATA")..[[\\The Creative Assembly\\Attila\\army_setups\\]];\n'
-            b'\tlocal battle_preferences_path = os.getenv("APPDATA")..[[\\The Creative Assembly\\Attila\\battle_preferences\\]];'
+            b'function CheckPreferences()\r\n'
+            b'\tlocal army_setups_path = os.getenv("APPDATA")..[[\\The Creative Assembly\\Attila\\army_setups\\]];\r\n'
+            b'\tlocal battle_preferences_path = os.getenv("APPDATA")..[[\\The Creative Assembly\\Attila\\battle_preferences\\]];\r\n'
         )
         patched, repairs = tool.apply_lua_compatibility(
             "lua_scripts/frontend_cb_crash_fix.lua", source
         )
-        self.assertEqual(patched, source)
-        self.assertEqual(repairs, [])
+        self.assertTrue(patched.startswith(
+            b'function CheckPreferences()\r\n\tif not os.getenv("APPDATA") then return end'
+        ))
+        self.assertEqual(patched.count(b"\r\n"), source.count(b"\r\n") + 1)
+        self.assertEqual(patched.count(b"\n"), patched.count(b"\r\n"))
+        self.assertTrue(patched.endswith(source[len(b"function CheckPreferences()\r\n"):]))
+        self.assertEqual(len(repairs), 1)
+
+    def test_preferences_cleanup_refuses_an_unexpected_shape(self):
+        with self.assertRaises(tool.ToolError):
+            tool.apply_lua_compatibility(
+                "lua_scripts/frontend_cb_crash_fix.lua",
+                b'function CheckPreferences()\n\tlocal p = os.getenv("APPDATA");\n',
+            )
+
+    def test_ironman_save_rename_uses_feral_save_folder_without_appdata(self):
+        source = (
+            b'\t\tend\r\n\r\n'
+            b'\t\tlocal save_path = os.getenv("APPDATA")..[[\\The Creative Assembly\\Attila\\save_games\\]];\r\n'
+            b'\t\tlocal auto_save_path = save_path.."auto_save.save";\r\n'
+        )
+        patched, repairs = tool.apply_lua_compatibility(
+            "campaigns/main_attila/ironman/ironman.lua", source
+        )
+        self.assertIn(b'\t\tif os.getenv("APPDATA") then\r\n', patched)
+        self.assertIn(
+            b'/Library/Application Support/Feral Interactive/Total War ATTILA/VFS/User/'
+            b'AppData/Roaming/The Creative Assembly/Attila/save_games/";\r\n',
+            patched,
+        )
+        self.assertTrue(patched.endswith(b'\t\tend\r\n\t\tlocal auto_save_path = save_path.."auto_save.save";\r\n'))
+        self.assertEqual(patched.count(b"\n"), patched.count(b"\r\n"))
+        self.assertEqual(len(repairs), 1)
+
+    def test_ironman_save_rename_refuses_an_unexpected_shape(self):
+        with self.assertRaises(tool.ToolError):
+            tool.apply_lua_compatibility("campaigns/main_attila/ironman/ironman.lua",
+                                         b'local save_path = os.getenv("APPDATA");\n')
 
     def test_change_capital_refuses_an_unexpected_script(self):
         with self.assertRaises(tool.ToolError):

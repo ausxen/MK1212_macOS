@@ -32,7 +32,7 @@ from typing import BinaryIO, Callable, Iterable
 
 APP_ID = "325610"
 TOOL_VERSION = "0.8.0"
-PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-no-windows-helper-ui-v5-no-change-capital-helper"
+PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-no-windows-helper-ui-v6-appdata-guards"
 SUPPORTED_RUNTIME_EXECUTABLE_SHA256 = (
     "13f5d523019f291f489353fa5d3661bc9a668bb2b0375d6c3201e01d74525c5e"
 )
@@ -1229,6 +1229,44 @@ function Add_MK1212_Change_Capital_Listeners()
         end, true);
 end
 ''', ["removed the Windows-only change-capital prompt, executable dropper and quick-load; hide its button"]
+    newline = b"\r\n" if b"\r\n" in data else b"\n"
+    if relative_folded == "lua_scripts/frontend_cb_crash_fix.lua":
+        # CheckPreferences() builds Windows %APPDATA% paths.  On macOS
+        # os.getenv("APPDATA") is nil, so the concatenation raises inside the
+        # first frontend UICreated listener.  Feral keeps these preference
+        # files in its own VFS, which this Windows cleanup never reaches.
+        cb_old = b"function CheckPreferences()" + newline
+        cb_new = (cb_old + b'\tif not os.getenv("APPDATA") then return end '
+                  b"-- macOS: no %APPDATA%; skip the Windows-only cleanup." + newline)
+        if data.count(cb_old) != 1 or data.count(b'os.getenv("APPDATA")') != 2:
+            raise ToolError("unexpected MK1212 custom-battle preferences script; refusing a partial Lua compatibility edit")
+        return data.replace(cb_old, cb_new), [
+            "skipped the Windows-only preferences cleanup when APPDATA is unset",
+        ]
+    if relative_folded == "campaigns/main_attila/ironman/ironman.lua":
+        # Rename_Save_Ironman() renames auto_save.save in %APPDATA%; with
+        # APPDATA unset the concatenation raises and Ironman saves are never
+        # renamed.  Use Feral's save folder under the real home directory.
+        # The launcher's isolated home links VFS/User to that same folder.
+        ironman_old = (b'\t\tlocal save_path = os.getenv("APPDATA")..'
+                       b'[[\\The Creative Assembly\\Attila\\save_games\\]];' + newline)
+        ironman_new = newline.join([
+            b"\t\tlocal save_path;",
+            b'\t\tif os.getenv("APPDATA") then',
+            b'\t\t\tsave_path = os.getenv("APPDATA")..[[\\The Creative Assembly\\Attila\\save_games\\]];',
+            b'\t\telseif os.getenv("HOME") then -- macOS: Feral keeps saves in its VFS.',
+            b'\t\t\tsave_path = os.getenv("HOME").."/Library/Application Support/Feral Interactive/'
+            b'Total War ATTILA/VFS/User/AppData/Roaming/The Creative Assembly/Attila/save_games/";',
+            b"\t\telse",
+            b"\t\t\treturn;",
+            b"\t\tend",
+            b"",
+        ])
+        if data.count(ironman_old) != 1:
+            raise ToolError("unexpected MK1212 Ironman script; refusing a partial Lua compatibility edit")
+        return data.replace(ironman_old, ironman_new), [
+            "renamed Ironman saves in Feral's save folder when APPDATA is unset",
+        ]
 
     if relative_folded != "lua_scripts/frontend_scripted.lua":
         return data, []
