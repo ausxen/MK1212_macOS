@@ -32,7 +32,7 @@ from typing import BinaryIO, Callable, Iterable
 
 APP_ID = "325610"
 TOOL_VERSION = "0.8.0"
-PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-no-windows-helper-ui-v4-pack-priority"
+PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-no-windows-helper-ui-v5-no-change-capital-helper"
 SUPPORTED_RUNTIME_EXECUTABLE_SHA256 = (
     "13f5d523019f291f489353fa5d3661bc9a668bb2b0375d6c3201e01d74525c5e"
 )
@@ -1197,6 +1197,38 @@ function Add_MK1212_Slots_Listeners()
         end, true);
 end
 ''', ["removed the Windows-only slot dialog and click handler; hide its layout button on settlement events"]
+    if relative_folded == "campaigns/main_attila/mk1212_change_capital.lua":
+        if sha256_bytes(data) != "7d373cac86abc7fa65ab32fdd1bca35a94c8c23e71f1ea32598b4c65f53a9dfc":
+            raise ToolError("unexpected MK1212 change-capital script; refusing an unsafe replacement")
+        # The original file implements only a Windows helper: confirming its
+        # prompt autosaves, writes faction_capital_change.exe and its .config
+        # into the working directory, runs it with os.execute and quick-loads
+        # three seconds later.  On macOS the helper cannot run, so the capital
+        # never changes, two Windows files are left in TotalWarAttilaData and
+        # the campaign reloads.  scripting.lua loads this file and
+        # mk1212_start.lua calls Add_MK1212_Change_Capital_Listeners(), so keep
+        # that entry point and only keep the script-owned button hidden.
+        return b'''-- MK1212 macOS: changing capital needs a Windows-only helper executable.
+-- Keep the original listener entry point without the prompt, dropper or reload.
+function Add_MK1212_Change_Capital_Listeners()
+    cm:add_listener("MK1212_Hide_Change_Capital_OnPanel", "PanelOpenedCampaign", true,
+        function(context) cm:add_time_trigger("MK1212_Hide_Change_Capital", 0.1) end, true);
+    cm:add_listener("MK1212_Hide_Change_Capital_OnSettlement", "SettlementSelected", true,
+        function(context) cm:add_time_trigger("MK1212_Hide_Change_Capital", 0.1) end, true);
+    cm:add_listener("MK1212_Hide_Change_Capital_OnTimer", "TimeTrigger",
+        function(context) return context.string == "MK1212_Hide_Change_Capital" end,
+        function(context)
+            local root = cm:ui_root();
+            local panel_found = root:Find("main_settlement_panel");
+            if panel_found then
+                local button_found = UIComponent(panel_found):Find("button_change_capital");
+                if button_found then
+                    UIComponent(button_found):SetVisible(false);
+                end
+            end
+        end, true);
+end
+''', ["removed the Windows-only change-capital prompt, executable dropper and quick-load; hide its button"]
 
     if relative_folded != "lua_scripts/frontend_scripted.lua":
         return data, []

@@ -556,6 +556,33 @@ class TransientProfileTests(unittest.TestCase):
         self.assertEqual(patched, source)
         self.assertEqual(repairs, [])
 
+    def test_change_capital_refuses_an_unexpected_script(self):
+        with self.assertRaises(tool.ToolError):
+            tool.apply_lua_compatibility(
+                "campaigns/main_attila/mk1212_change_capital.lua",
+                b"function Add_MK1212_Change_Capital_Listeners() end\n",
+            )
+
+    def test_change_capital_helper_is_removed_but_listener_entry_point_remains(self):
+        source_pack = (Path.home() /
+            "Library/Application Support/Steam/steamapps/workshop/content/325610/1934544571/1-1212scripts.pack")
+        if not source_pack.is_file():
+            self.skipTest("local MK1212 Scripts pack is unavailable")
+        _, entries = tool.read_pack(source_pack)
+        entry = next(
+            item for item in entries
+            if item.relative_path.casefold() == "campaigns/main_attila/mk1212_change_capital.lua"
+        )
+        with source_pack.open("rb") as stream:
+            original = tool.read_entry(stream, entry)
+        patched, repairs = tool.apply_lua_compatibility(entry.relative_path, original)
+        self.assertIn(b"function Add_MK1212_Change_Capital_Listeners()", patched)
+        self.assertIn(b"UIComponent(button_found):SetVisible(false)", patched)
+        for removed in (b"CreateComponent", b"ComponentLClickUp", b"faction_capital_change.exe",
+                        b"os.execute", b"io.open", b"quick_load", b"autosave"):
+            self.assertNotIn(removed, patched)
+        self.assertEqual(len(repairs), 1)
+
     def test_hre_logging_is_left_unchanged_pending_a_b_test(self):
         source = (
             b'    local logFilePath = "C:\\\\Users\\\\mitch\\\\AppData\\\\Roaming\\\\The Creative Assembly\\\\Attila\\\\logs\\\\mitch_debug_log.txt"\n'
