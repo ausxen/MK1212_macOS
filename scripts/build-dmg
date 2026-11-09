@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="${0:A:h:h}"
-version="${VERSION:-0.8.0}"
+version="${VERSION:-0.8.2}"
 dist_root="$repo_root/dist"
 archive="$dist_root/MK1212_macOS-${version}.dmg"
 checksum="$archive.sha256"
@@ -22,7 +22,7 @@ trap 'rm -rf "$build_root"' EXIT
 mkdir -p "$clean_root" "$mountpoint" "$dist_root"
 "$repo_root/scripts/build-package" "$package" >/dev/null
 cp "$repo_root/Read_Me_First.txt" "$clean_root/Read_Me_First.txt"
-cp "$repo_root/RELEASE-NOTES-0.8.0.md" "$clean_root/RELEASE-NOTES-0.8.0.md"
+cp "$repo_root/RELEASE-NOTES-0.8.2.md" "$clean_root/RELEASE-NOTES-0.8.2.md"
 cp "$repo_root/NOTICE.md" "$clean_root/NOTICE.md"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$clean_root/.VolumeIcon.icns"
 

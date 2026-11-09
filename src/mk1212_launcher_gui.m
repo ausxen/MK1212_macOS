@@ -7,6 +7,7 @@ static NSPasteboardType const MKSubmodRowType = @"local.mk1212.launcher.submod-r
 @property(nonatomic) NSMutableArray<NSMutableDictionary *> *items;
 @property(nonatomic) NSString *actionLabel;
 @property(nonatomic) NSString *helpText;
+@property(nonatomic) BOOL showSplash;
 @property(nonatomic, nullable) NSString *status;
 @property(nonatomic) NSString *mode;
 @property(nonatomic, nullable) NSString *progressPath;
@@ -19,6 +20,7 @@ static NSPasteboardType const MKSubmodRowType = @"local.mk1212.launcher.submod-r
 @property(nonatomic, nullable) NSString *resultPath;
 @property(nonatomic) NSWindow *window;
 @property(nonatomic, nullable) NSWindow *helpWindow;
+@property(nonatomic, nullable) NSWindow *creditsWindow;
 @property(nonatomic) NSTableView *tableView;
 @property(nonatomic, nullable) NSTextField *progressLabel;
 @property(nonatomic, nullable) NSProgressIndicator *progressIndicator;
@@ -45,6 +47,7 @@ static MKLauncherController *MKController = nil;
         }
         _actionLabel = config[@"actionLabel"] ?: @"Launch";
         _helpText = config[@"helpText"] ?: @"";
+        _showSplash = [config[@"showSplash"] isEqual:@YES];
         id status = config[@"status"];
         _status = [status isKindOfClass:NSString.class] ? status : nil;
         id mode = config[@"mode"];
@@ -69,7 +72,32 @@ static MKLauncherController *MKController = nil;
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
-    if (self.window == nil) [self buildWindow];
+    NSImage *artwork = self.showSplash
+        ? [NSBundle.mainBundle imageForResource:@"launcher-splash.jpg"] : nil;
+    if (artwork == nil) {
+        [self buildWindow];
+        return;
+    }
+
+    NSRect frame = NSMakeRect(0, 0, 720, 360);
+    NSWindow *splash = [[NSWindow alloc] initWithContentRect:frame
+        styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+    splash.level = NSFloatingWindowLevel;
+    splash.ignoresMouseEvents = YES;
+    NSImageView *imageView = [[NSImageView alloc] initWithFrame:frame];
+    imageView.image = artwork;
+    imageView.imageScaling = NSImageScaleProportionallyUpOrDown;
+    [imageView setAccessibilityLabel:@"Medieval Kingdoms 1212 AD macOS Launcher"];
+    splash.contentView = imageView;
+    [splash center];
+    [splash orderFrontRegardless];
+    [NSApp activateIgnoringOtherApps:YES];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [self buildWindow];
+        [splash orderOut:nil];
+    });
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
@@ -164,6 +192,9 @@ static MKLauncherController *MKController = nil;
     NSButton *helpButton = [NSButton buttonWithTitle:@"?  Help"
                                              target:self action:@selector(showHelp:)];
     helpButton.bezelStyle = NSBezelStyleRounded;
+    NSButton *creditsButton = [NSButton buttonWithTitle:@"Credits"
+                                                target:self action:@selector(showCredits:)];
+    creditsButton.bezelStyle = NSBezelStyleRounded;
     NSButton *rebuildButton = [NSButton buttonWithTitle:@"Rebuild Cache"
                                                 target:self action:@selector(rebuildCache:)];
     rebuildButton.bezelStyle = NSBezelStyleRounded;
@@ -181,7 +212,7 @@ static MKLauncherController *MKController = nil;
     [spacer setContentHuggingPriority:NSLayoutPriorityDefaultLow
                        forOrientation:NSLayoutConstraintOrientationHorizontal];
     NSStackView *buttonRow = [NSStackView stackViewWithViews:
-        @[helpButton, rebuildButton, spacer, cancelButton, confirmButton]];
+        @[helpButton, creditsButton, rebuildButton, spacer, cancelButton, confirmButton]];
     buttonRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     buttonRow.spacing = 10;
     buttonRow.alignment = NSLayoutAttributeCenterY;
@@ -475,20 +506,14 @@ static MKLauncherController *MKController = nil;
                    dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
 }
 
-- (void)showHelp:(id)sender {
-    (void)sender;
-    if (self.helpWindow != nil) {
-        [self.helpWindow makeKeyAndOrderFront:nil];
-        [self.helpWindow orderFrontRegardless];
-        return;
-    }
+- (NSWindow *)infoWindowWithTitle:(NSString *)title text:(NSString *)body {
     NSWindow *panel = [[NSWindow alloc]
         initWithContentRect:NSMakeRect(0, 0, 560, 430)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                             NSWindowStyleMaskResizable
                     backing:NSBackingStoreBuffered
                       defer:NO];
-    panel.title = @"MK1212 Launcher Help";
+    panel.title = title;
     panel.level = NSFloatingWindowLevel;
     panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
                                NSWindowCollectionBehaviorFullScreenAuxiliary;
@@ -504,15 +529,39 @@ static MKLauncherController *MKController = nil;
     text.drawsBackground = NO;
     text.textContainerInset = NSMakeSize(18, 18);
     text.font = [NSFont systemFontOfSize:14];
-    text.string = self.helpText;
+    text.string = body;
     text.autoresizingMask = NSViewWidthSizable;
     scroll.documentView = text;
     panel.contentView = scroll;
     [panel center];
-    self.helpWindow = panel;
+    return panel;
+}
+
+- (void)showInfoWindow:(NSWindow *)panel {
     [panel makeKeyAndOrderFront:nil];
     [panel orderFrontRegardless];
     [NSApp activateIgnoringOtherApps:YES];
+}
+
+- (void)showHelp:(id)sender {
+    (void)sender;
+    if (self.helpWindow == nil) {
+        self.helpWindow = [self infoWindowWithTitle:@"MK1212 Launcher Help" text:self.helpText];
+    }
+    [self showInfoWindow:self.helpWindow];
+}
+
+- (void)showCredits:(id)sender {
+    (void)sender;
+    if (self.creditsWindow == nil) {
+        NSString *credits = @"Credits\n\n"
+            "• ausxen (https://github.com/ausxen/) – Primary Development\n"
+            "• Aznor12 (https://github.com/Aznor12) – Additional Development & Debugging\n"
+            "• Robonios (https://github.com/Robonios/) – Debugging\n"
+            "• raweon (discord @raweoff) – Testing";
+        self.creditsWindow = [self infoWindowWithTitle:@"MK1212 Launcher Credits" text:credits];
+    }
+    [self showInfoWindow:self.creditsWindow];
 }
 
 - (void)emitAction:(NSString *)action {
@@ -546,6 +595,7 @@ static MKLauncherController *MKController = nil;
     }
     [self.window orderOut:nil];
     [self.helpWindow orderOut:nil];
+    [self.creditsWindow orderOut:nil];
     [NSApp terminate:nil];
 }
 
@@ -583,7 +633,6 @@ int main(int argc, const char *argv[]) {
         MKController.resultPath = resultPath;
         [application setActivationPolicy:NSApplicationActivationPolicyAccessory];
         application.delegate = MKController;
-        [MKController buildWindow];
         [application run];
     }
     return 0;

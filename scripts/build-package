@@ -3,7 +3,7 @@ set -euo pipefail
 export COPYFILE_DISABLE=1
 
 repo_root="${0:A:h:h}"
-version="${VERSION:-0.8.0}"
+version="${VERSION:-0.8.2}"
 output="${1:-$repo_root/dist/MK1212-macOS-${version}.pkg}"
 signing_identity="${CODESIGN_IDENTITY:--}"
 installer_identity="${INSTALLER_IDENTITY:-}"
@@ -27,7 +27,7 @@ component_pkg="$build_root/MK1212MacLauncherComponent.pkg"
 installer_resources="$build_root/installer-resources"
 
 mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
-mkdir -p "$gui_app_root/Contents/MacOS"
+mkdir -p "$gui_app_root/Contents/MacOS" "$gui_app_root/Contents/Resources"
 mkdir -p "$uninstaller_root/Contents/MacOS" "$uninstaller_root/Contents/Resources"
 mkdir -p "$installer_resources"
 mkdir -p "${output:h}"
@@ -42,13 +42,14 @@ cp "$repo_root/src/mk1212_mac_tool.py" "$app_root/Contents/Resources/mk1212_mac_
 cp "$runtime_library" "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212MacLauncher.icns"
 cp "$repo_root/app/gui/Info.plist" "$gui_app_root/Contents/Info.plist"
+cp "$repo_root/docs/assets/page_img/social-preview.jpg" "$gui_app_root/Contents/Resources/launcher-splash.jpg"
 cp "$launcher_gui" "$gui_app_root/Contents/MacOS/mk1212-launcher-gui"
 
 cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plist"
 cp "$uninstaller_executable" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
 cp "$repo_root/INSTALL.txt" "$install_root/README.txt"
-cp "$repo_root/RELEASE-NOTES-0.8.0.md" "$install_root/RELEASE-NOTES-0.8.0.md"
+cp "$repo_root/RELEASE-NOTES-0.8.2.md" "$install_root/RELEASE-NOTES-0.8.2.md"
 cp "$repo_root/installer/resources/Welcome.html" "$installer_resources/Welcome.html"
 cp "$repo_root/installer/resources/Conclusion.html" "$installer_resources/Conclusion.html"
 

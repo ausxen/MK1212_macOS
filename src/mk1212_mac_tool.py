@@ -31,7 +31,7 @@ from typing import BinaryIO, Callable, Iterable
 
 
 APP_ID = "325610"
-TOOL_VERSION = "0.8.0"
+TOOL_VERSION = "0.8.2"
 PROFILE_COMPATIBILITY_REVISION = "mac-runtime-slots-no-windows-helper-ui-v6-appdata-guards"
 SUPPORTED_RUNTIME_EXECUTABLE_SHA256 = (
     "13f5d523019f291f489353fa5d3661bc9a668bb2b0375d6c3201e01d74525c5e"
@@ -1734,7 +1734,8 @@ def choose_optional_packs(state: dict, action_label: str = "Launch",
     current = {name.casefold() for name in state.get("selected_optional_packs", optionals)}
     items = [{"name": name, "selected": name.casefold() in current} for name in optionals]
     config = json.dumps({"items": items, "actionLabel": action_label,
-                         "helpText": LAUNCHER_HELP, "status": status})
+                         "helpText": LAUNCHER_HELP, "status": status,
+                         "showSplash": action_label == "Launch" and status is None})
     gui_executable = launcher_gui_path()
     gui_app = launcher_gui_app(gui_executable)
     if gui_app is not None:

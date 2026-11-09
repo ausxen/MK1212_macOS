@@ -27,13 +27,14 @@ signing_identity="${CODESIGN_IDENTITY:--}"
 "$repo_root/scripts/build-launcher-gui" "$launcher_gui" >/dev/null
 
 mkdir -p "$app_root/Contents/MacOS" "$app_root/Contents/Resources"
-mkdir -p "$gui_app_root/Contents/MacOS"
+mkdir -p "$gui_app_root/Contents/MacOS" "$gui_app_root/Contents/Resources"
 cp "$repo_root/app/Info.plist" "$app_root/Contents/Info.plist"
 cp "$repo_root/app/launcher" "$app_root/Contents/MacOS/MK1212 Mac Launcher"
 cp "$repo_root/src/mk1212_mac_tool.py" "$app_root/Contents/Resources/mk1212_mac_tool.py"
 cp "$runtime_library" "$app_root/Contents/Resources/libmk1212-slot-runtime-patch.dylib"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$app_root/Contents/Resources/MK1212MacLauncher.icns"
 cp "$repo_root/app/gui/Info.plist" "$gui_app_root/Contents/Info.plist"
+cp "$repo_root/docs/assets/page_img/social-preview.jpg" "$gui_app_root/Contents/Resources/launcher-splash.jpg"
 cp "$launcher_gui" "$gui_app_root/Contents/MacOS/mk1212-launcher-gui"
 
 chmod 755 "$app_root/Contents/MacOS/MK1212 Mac Launcher"

@@ -12,5 +12,5 @@
     <choice id="launcher" visible="false" title="MK1212 Mac Launcher">
         <pkg-ref id="local.mk1212.mac-launcher.pkg"/>
     </choice>
-    <pkg-ref id="local.mk1212.mac-launcher.pkg" version="0.8.0" onConclusion="none">MK1212MacLauncherComponent.pkg</pkg-ref>
+    <pkg-ref id="local.mk1212.mac-launcher.pkg" version="0.8.2" onConclusion="none">MK1212MacLauncherComponent.pkg</pkg-ref>
 </installer-gui-script>

@@ -2,7 +2,7 @@ ausxen's MK1212 macOS Launcher
 
 DMG installation
 ----------------
-Open `MK1212_macOS-0.8.0.dmg`, then double-click
+Open `MK1212_macOS-0.8.2.dmg`, then double-click
 `Install MK1212 Mac Launcher.pkg`. The macOS Installer places the launcher in:
 
     /Applications/MK1212 Mac Launcher/
@@ -11,7 +11,7 @@ Open `MK1212 Mac Launcher.app` from that folder, or add that app to Steam as a
 non-Steam game. To remove the launcher, close ATTILA and open
 `Uninstall MK1212 Mac Launcher.app`.
 
-Release 0.8.0 enables ten-slot settlements automatically on the supported
+Release 0.8.2 enables ten-slot settlements automatically on the supported
 ARM64 Feral ATTILA 1.6.1 build. Its heap-only runtime patch changes no executable
 code pages and does not edit or re-sign the installed Feral application.
 
