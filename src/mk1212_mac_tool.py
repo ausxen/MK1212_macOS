@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import errno
+import fcntl
 import hashlib
 import json
 import math
@@ -1890,6 +1891,50 @@ def install_command(args: argparse.Namespace) -> None:
     print(f"Manifest backup: {backup['path']} ({backup['sha256']})")
 
 
+def inactive_live_tree_failures(state: dict, manifest_names: Iterable[str]) -> list[str]:
+    failures = []
+    live_packs = list(Path(state["data_root"]).glob(f"{GENERATED_PREFIX}*"))
+    if live_packs:
+        failures.append("inactive launcher left generated packs in the live data tree")
+    runtime_names = {record["relative_path"] for profile in state.get("profiles", {}).values()
+                     for record in profile["files"]}
+    leftovers = [name for name in runtime_names if safe_destination(Path(state["data_root"]), name).exists()]
+    if leftovers:
+        failures.append("inactive launcher left runtime files: " + ", ".join(leftovers[:8]))
+    leaked_manifest = [name for name in runtime_names if name in manifest_names]
+    if leaked_manifest:
+        failures.append("inactive launcher left manifest entries: " + ", ".join(leaked_manifest[:8]))
+    used = Path(state["game_root"]) / "TotalWarAttilaData/used_mods.txt"
+    if used.exists():
+        failures.append(f"inactive launcher left used_mods.txt: {used}")
+    return failures
+
+
+def cache_is_missing_and_inactive(state_dir: Path, state: dict) -> bool:
+    """Recognize a missing generated cache without treating live files as disposable."""
+    game_data = Path(state["game_root"]) / "TotalWarAttilaData"
+    cache_root = Path(state["cache_root"])
+    if (cache_root != game_data / ".mk1212-cache"
+            or cache_root.is_symlink() or cache_root.exists()):
+        return False
+    if game_running() or os.path.lexists(state_dir / "activation.json"):
+        raise ToolError("cannot recover a missing cache while ATTILA or a launcher activation is active")
+
+    data_root = Path(state["data_root"])
+    manifest = Path(state["manifest"])
+    if data_root != game_data / "data" or not data_root.is_dir() or manifest != game_data / "feral/en/manifest.txt":
+        raise ToolError("cannot recover a missing cache with unexpected ATTILA paths")
+    manifest_names = {name for name, _ in parse_manifest(manifest.read_bytes())}
+    failures = inactive_live_tree_failures(state, manifest_names)
+    if any(name.casefold().startswith(GENERATED_PREFIX) or name.casefold().endswith(".lua")
+           for name in manifest_names):
+        failures.append("live manifest still contains generated packs or loose Lua")
+    if failures:
+        raise ToolError("cannot recover a missing cache while compatibility files are active:\n  " +
+                        "\n  ".join(failures))
+    return True
+
+
 def verify_command(args: argparse.Namespace) -> None:
     state_dir = Path(args.state_dir).expanduser().resolve()
     state = load_state(state_dir)
@@ -1956,20 +2001,7 @@ def verify_command(args: argparse.Namespace) -> None:
         if not used.is_file() or sha256_path(used) != activation["used_mods_sha256"]:
             failures.append(f"active used_mods.txt mismatch: {used}")
     else:
-        live_packs = list(Path(state["data_root"]).glob(f"{GENERATED_PREFIX}*"))
-        if live_packs:
-            failures.append("inactive launcher left generated packs in the live data tree")
-        runtime_names = {record["relative_path"] for profile in state.get("profiles", {}).values()
-                         for record in profile["files"]}
-        leftovers = [name for name in runtime_names if safe_destination(Path(state["data_root"]), name).exists()]
-        if leftovers:
-            failures.append("inactive launcher left runtime files: " + ", ".join(leftovers[:8]))
-        leaked_manifest = [name for name in runtime_names if name in manifest_map]
-        if leaked_manifest:
-            failures.append("inactive launcher left manifest entries: " + ", ".join(leaked_manifest[:8]))
-        used = Path(state["game_root"]) / "TotalWarAttilaData/used_mods.txt"
-        if used.exists():
-            failures.append(f"inactive launcher left used_mods.txt: {used}")
+        failures.extend(inactive_live_tree_failures(state, manifest_map))
     result = {"ok": not failures, "failures": failures, "active": active,
               "profile_count": len(state.get("profiles", {})), "cached_file_count": cached_count,
               "source_count": len(state["source_packs"]), "manifest_sha256": sha256_path(manifest),
@@ -2214,13 +2246,16 @@ def uninstall_command(args: argparse.Namespace) -> None:
     if status != "prepared":
         raise ToolError(f"state is {status!r}, not prepared")
     recover_stale_activation(state_dir, state)
-    verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
+    cache_missing = cache_is_missing_and_inactive(state_dir, state)
+    if not cache_missing:
+        verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
     backup = manifest_backup(Path(state["manifest"]), state_dir, "uninstall")
     cache_root = Path(state["cache_root"])
     expected = Path(state["game_root"]) / "TotalWarAttilaData/.mk1212-cache"
     if cache_root.resolve() != expected.resolve():
         raise ToolError(f"refusing unexpected cache removal target: {cache_root}")
-    shutil.rmtree(cache_root)
+    if not cache_missing:
+        shutil.rmtree(cache_root)
     native = state.get("native_slot_clone")
     if native:
         native_app = Path(native.get("clone_app", ""))
@@ -2233,7 +2268,10 @@ def uninstall_command(args: argparse.Namespace) -> None:
     state["uninstalled_at"] = utc_now()
     state["uninstall_manifest_backup"] = backup
     save_json(state_dir / "state.json", state)
-    print(f"Removed {len(state.get('profiles', {}))} cached profiles. The live ATTILA tree was already vanilla.")
+    if cache_missing:
+        print("Compatibility cache was already absent. The live ATTILA tree was verified inactive.")
+    else:
+        print(f"Removed {len(state.get('profiles', {}))} cached profiles. The live ATTILA tree was already vanilla.")
 
 
 def configure_command(args: argparse.Namespace) -> None:
@@ -2289,10 +2327,14 @@ def prepare_launch_state(args: argparse.Namespace, state_dir: Path) -> dict:
     """Perform visible first-run setup after a fresh install or uninstall."""
     state_file = state_dir / "state.json"
     state = load_state(state_dir) if state_file.is_file() else None
+    recovering = False
     if state is not None and state.get("status") not in ("uninstalled", "rolled_back"):
-        return state
+        recovering = state.get("status") == "prepared" and cache_is_missing_and_inactive(state_dir, state)
+        if not recovering:
+            return state
 
-    report_rebuild_progress(state_dir, "Starting first-time launcher setup")
+    message = "Rebuilding a missing compatibility cache" if recovering else "Starting first-time launcher setup"
+    report_rebuild_progress(state_dir, message)
     done_path = start_rebuild_progress_window(
         state_dir,
         "Preparing MK1212 for first use",
@@ -2300,16 +2342,27 @@ def prepare_launch_state(args: argparse.Namespace, state_dir: Path) -> dict:
     )
     try:
         install_command(argparse.Namespace(
-            state_dir=str(state_dir), game_root=args.game_root,
-            profile="mk1212", load_order_file=None,
+            state_dir=str(state_dir), game_root=state["game_root"] if recovering else args.game_root,
+            profile=state["profile"] if recovering else "mk1212",
+            load_order_file=(state.get("load_order_file") or {}).get("path") if recovering else None,
         ))
+        prepared = load_state(state_dir)
+        if recovering:
+            prepared["optional_load_order"] = state.get("optional_load_order", optional_load_order(state))
+            prepared["optional_load_order"] = optional_load_order(prepared)
+            previous_selection = state.get("selected_optional_packs", optional_pack_names(state))
+            enabled = {name.casefold() for name in previous_selection}
+            prepared["selected_optional_packs"] = [
+                name for name in prepared["optional_load_order"] if name.casefold() in enabled
+            ]
+            save_json(state_file, prepared)
     except BaseException as exc:
         save_json(done_path, {"status": "failed", "message": f"First-time setup stopped: {exc}"})
         time.sleep(0.5)
         raise
     save_json(done_path, {"status": "success", "message": "First-time setup complete."})
     time.sleep(0.5)
-    return load_state(state_dir)
+    return prepared
 
 
 def preflight_launch_executable(args: argparse.Namespace, state_dir: Path) -> tuple[Path, str]:
@@ -2478,7 +2531,17 @@ def make_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = make_parser().parse_args()
     try:
-        args.func(args)
+        if args.command in ("install", "configure", "launch", "uninstall"):
+            state_dir = Path(args.state_dir).expanduser().resolve()
+            state_dir.mkdir(parents=True, exist_ok=True)
+            with (state_dir / ".operation.lock").open("a") as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as exc:
+                    raise ToolError("another launcher operation is already in progress") from exc
+                args.func(args)
+        else:
+            args.func(args)
     except NativeErrorDisplayed as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return NATIVE_ERROR_EXIT_CODE

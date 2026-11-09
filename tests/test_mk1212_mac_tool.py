@@ -150,6 +150,75 @@ class TransientProfileTests(unittest.TestCase):
             with patch.object(tool, "game_running", return_value=False):
                 tool.uninstall_command(argparse.Namespace(state_dir=str(state_dir)))
 
+    def missing_cache_state(self, root):
+        game_data = root / "TotalWarAttilaData"
+        data_root = game_data / "data"
+        data_root.mkdir(parents=True)
+        manifest = game_data / "feral/en/manifest.txt"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_bytes(b"vanilla.pack\t123\n")
+        return {
+            "status": "prepared", "profile": "mk1212", "game_root": str(root),
+            "data_root": str(data_root), "manifest": str(manifest),
+            "cache_root": str(game_data / ".mk1212-cache"),
+            "profiles": {"old": {"files": [{"relative_path": "old.lua"}]}},
+            "source_packs": [{"name": name, "optional": True}
+                             for name in ("one.pack", "two.pack")],
+            "optional_load_order": ["two.pack", "one.pack"],
+            "selected_optional_packs": ["two.pack"],
+        }
+
+    def test_launch_rebuilds_missing_cache_and_preserves_optional_choices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_dir = root / "state"
+            state = self.missing_cache_state(root)
+            tool.save_json(state_dir / "state.json", state)
+            done_path = state_dir / "done.json"
+
+            def install(args):
+                self.assertEqual(args.game_root, str(root))
+                self.assertEqual(args.profile, "mk1212")
+                tool.save_json(state_dir / "state.json", {
+                    "status": "prepared", "profiles": {},
+                    "source_packs": state["source_packs"] + [{"name": "new.pack", "optional": True}],
+                    "optional_load_order": ["one.pack", "two.pack", "new.pack"],
+                    "selected_optional_packs": ["one.pack", "two.pack", "new.pack"],
+                })
+
+            with patch.object(tool, "game_running", return_value=False), \
+                 patch.object(tool, "start_rebuild_progress_window", return_value=done_path), \
+                 patch.object(tool, "report_rebuild_progress"), \
+                 patch.object(tool, "install_command", side_effect=install), \
+                 patch.object(tool.time, "sleep"):
+                recovered = tool.prepare_launch_state(argparse.Namespace(game_root=None), state_dir)
+            self.assertEqual(recovered["optional_load_order"], ["two.pack", "one.pack", "new.pack"])
+            self.assertEqual(recovered["selected_optional_packs"], ["two.pack"])
+            self.assertEqual(tool.load_state(state_dir), recovered)
+
+    def test_uninstall_accepts_missing_cache_only_with_inactive_live_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_dir = root / "state"
+            state = self.missing_cache_state(root)
+            tool.save_json(state_dir / "state.json", state)
+            manifest = Path(state["manifest"])
+            clean_manifest = manifest.read_bytes()
+            leftover = Path(state["data_root"]) / "old.lua"
+            leftover.write_text("return nil")
+            with patch.object(tool, "game_running", return_value=False):
+                args = argparse.Namespace(state_dir=str(state_dir))
+                with self.assertRaisesRegex(tool.ToolError, "compatibility files are active"):
+                    tool.uninstall_command(args)
+                self.assertEqual(tool.load_state(state_dir)["status"], "prepared")
+                self.assertTrue(leftover.exists())
+                leftover.unlink()
+                tool.uninstall_command(args)
+                tool.uninstall_command(args)
+            self.assertEqual(tool.load_state(state_dir)["status"], "uninstalled")
+            self.assertEqual(manifest.read_bytes(), clean_manifest)
+            self.assertFalse(Path(state["cache_root"]).exists())
+
     def test_native_picker_returns_drag_order_and_selection(self):
         state = {
             "source_packs": [

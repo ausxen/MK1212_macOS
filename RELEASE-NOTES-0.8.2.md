@@ -4,6 +4,9 @@
 
 - Shows the MK1212 artwork briefly before opening the launcher.
 - Adds a Credits window next to Help.
+- Recovers automatically when launcher records point to a missing cache. The
+  launcher rebuilds it, and the uninstaller continues once it verifies that
+  no compatibility files are active.
 
 ## Compatibility fixes from 0.8.1
 
