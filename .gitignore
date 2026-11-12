@@ -6,3 +6,5 @@ build/
 dist/*.zip
 *.log
 _docs/
+CHATGPT_PROJECT_CONTEXT.md
+_archive/
