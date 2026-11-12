@@ -14,7 +14,7 @@ FIRST LAUNCH — READ THIS BEFORE INSTALLING
 
 4. Open `MK1212 Mac Launcher.app` from that folder.
 
-Release 0.8.2 supports Feral ATTILA 1.6.1 build 480285.103778. If Steam or
+Release 0.8.3 supports Feral ATTILA 1.6.1 build 480285.103778. If Steam or
 Feral updates the ATTILA executable, the launcher will show a compatibility
 message and stop safely before enabling mods, launching ATTILA, or applying the
 ten-slot patch. Check for a newer launcher release. This safety message does

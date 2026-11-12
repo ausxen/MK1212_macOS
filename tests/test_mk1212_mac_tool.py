@@ -243,32 +243,106 @@ class TransientProfileTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in config["items"]], ["one.pack", "two.pack"])
         self.assertIn("Do not enable any mods", config["helpText"])
 
-    def test_force_rebuild_removes_only_generated_profiles(self):
+    def test_rebuild_clears_nonempty_cache_including_interrupted_output(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            game = root / "game"
-            cache = game / "TotalWarAttilaData/.mk1212-cache"
-            profiles = cache / "profiles"
-            recovery = cache / "recovery"
-            profiles.mkdir(parents=True)
-            recovery.mkdir()
-            (profiles / "old-generated-file").write_text("generated")
-            (recovery / "preserved-file").write_text("preserved")
+            state = self.missing_cache_state(root)
+            cache = Path(state["cache_root"])
+            (cache / "profiles/.interrupted").mkdir(parents=True)
+            (cache / "profiles/.interrupted/large.pack").write_bytes(b"old output")
+            (cache / "leftover").write_text("old")
             state_dir = root / "state"
-            state = {
-                "game_root": str(game), "cache_root": str(cache),
-                "profiles": {"old": {}}, "default_profile_key": "old",
-                "core_profile_key": "old",
-            }
-            with patch.object(tool, "report_rebuild_progress"), \
+            with patch.object(tool, "game_running", return_value=False), \
+                 patch.object(tool, "report_rebuild_progress"), \
                  patch.object(tool, "rebuild_profiles_for_current_sources") as rebuild:
                 tool.force_rebuild_profile_cache(state_dir, state)
-            self.assertFalse(profiles.exists())
-            self.assertEqual((recovery / "preserved-file").read_text(), "preserved")
+            self.assertFalse(cache.exists())
             self.assertEqual(state["profiles"], {})
-            self.assertNotIn("default_profile_key", state)
-            self.assertNotIn("core_profile_key", state)
+            self.assertEqual(state["selected_optional_packs"], ["two.pack"])
             rebuild.assert_called_once_with(state_dir, state)
+
+    def test_damaged_cache_is_rebuilt_with_visible_progress(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory)
+            state = {"profiles": {"bad": {"files": []}}}
+            done = state_dir / "done.json"
+            with patch.object(tool, "verify_profile", return_value=["missing Lua file"]), \
+                 patch.object(tool, "start_rebuild_progress_window", return_value=done), \
+                 patch.object(tool, "force_rebuild_profile_cache") as rebuild, \
+                 patch.object(tool.time, "sleep"):
+                tool.repair_incomplete_cache(state_dir, state)
+            rebuild.assert_called_once_with(state_dir, state)
+            self.assertEqual(json.loads(done.read_text())["status"], "success")
+
+    def test_picker_is_reachable_before_cache_verification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = {"status": "prepared", "game_root": directory}
+            args = argparse.Namespace(state_dir=directory, core_only=False, no_picker=False)
+            with patch.object(tool, "game_running", return_value=False), \
+                 patch.object(tool, "preflight_launch_executable"), \
+                 patch.object(tool, "prepare_launch_state", return_value=state), \
+                 patch.object(tool, "recover_stale_activation"), \
+                 patch.object(tool, "validate_supported_game_executable", return_value=(Path("/game"), "hash")), \
+                 patch.object(tool, "refresh_optional_sources"), \
+                 patch.object(tool, "choose_with_cache_actions", return_value=None) as picker, \
+                 patch.object(tool, "verify_command") as verify:
+                tool.launch_command(args)
+            picker.assert_called_once()
+            verify.assert_not_called()
+
+    def test_valid_cache_does_not_trigger_repair(self):
+        with patch.object(tool, "verify_profile", return_value=[]), \
+             patch.object(tool, "force_rebuild_profile_cache") as rebuild:
+            tool.repair_incomplete_cache(Path("/unused"), {"profiles": {"good": {}}})
+        rebuild.assert_not_called()
+
+    def test_rebuild_twice_writes_verified_cache_over_existing_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = self.missing_cache_state(root)
+            state.update(source_packs=[], profiles={}, optional_load_order=[],
+                         selected_optional_packs=[])
+            cache = Path(state["cache_root"])
+            cache.mkdir()
+            (cache / "stale.pack").write_bytes(b"stale")
+            with patch.object(tool, "game_running", return_value=False), \
+                 patch.object(tool, "report_rebuild_progress"), \
+                 patch.object(tool, "plan_compatibility", return_value=([], {})):
+                for _ in range(2):
+                    tool.force_rebuild_profile_cache(root / "state", state)
+                    profile = state["profiles"][state["default_profile_key"]]
+                    self.assertEqual(tool.verify_profile(profile), [])
+            self.assertFalse((cache / "stale.pack").exists())
+
+    def test_clear_cache_is_repeatable_and_preserves_external_symlink_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = self.missing_cache_state(root)
+            cache = Path(state["cache_root"])
+            cache.mkdir()
+            outside = root / "Workshop.pack"
+            outside.write_bytes(b"original")
+            (cache / "link").symlink_to(outside)
+            with patch.object(tool, "game_running", return_value=False):
+                tool.clear_profile_cache(root / "state", state)
+                tool.clear_profile_cache(root / "state", state)
+            self.assertEqual(outside.read_bytes(), b"original")
+            self.assertFalse(cache.exists())
+
+    def test_clear_refuses_active_game_or_symlinked_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = self.missing_cache_state(root)
+            cache = Path(state["cache_root"])
+            cache.mkdir()
+            with patch.object(tool, "game_running", return_value=True):
+                with self.assertRaises(tool.ToolError):
+                    tool.clear_profile_cache(root / "state", state)
+            cache.rmdir()
+            cache.symlink_to(root, target_is_directory=True)
+            with patch.object(tool, "game_running", return_value=False):
+                with self.assertRaises(tool.ToolError):
+                    tool.force_rebuild_profile_cache(root / "state", state)
 
     def test_nested_gui_app_is_detected_from_its_executable(self):
         executable = Path("/tmp/MK1212 Launcher UI.app/Contents/MacOS/mk1212-launcher-gui")

@@ -1643,6 +1643,10 @@ ATTILA Updates
 
 This launcher deliberately supports only Feral ATTILA 1.6.1 build 480285.103778. If Steam or Feral changes the ATTILA executable, the launcher stops before enabling mods or applying the ten-slot patch and asks you to check for a newer launcher version. This is a safety measure and does not mean your game installation is damaged.
 
+Clear Cache
+
+Clear Cache deletes the entire launcher cache to free disk space, including saved recovery files. Your submod choices are kept. Rebuild Cache or Launch recreates the needed files.
+
 Rebuild Cache
 
 Use Rebuild Cache only for troubleshooting—for example, after a Workshop update or if the game is not reflecting your selected submods. It safely discards the launcher's generated compatibility packs and recreates them from the installed Workshop files. It does not modify the original Workshop downloads.
@@ -1765,7 +1769,7 @@ def choose_optional_packs(state: dict, action_label: str = "Launch",
         picked = json.loads(value)
     except json.JSONDecodeError as exc:
         raise ToolError(f"launcher window returned invalid data: {value!r}") from exc
-    if not isinstance(picked, dict) or picked.get("action") not in ("confirm", "rebuild", "cancel") \
+    if not isinstance(picked, dict) or picked.get("action") not in ("confirm", "rebuild", "clear", "cancel") \
             or not isinstance(picked.get("selected"), list) or not isinstance(picked.get("order"), list):
         raise ToolError("launcher window returned an invalid selection")
     order = picked["order"]
@@ -1834,7 +1838,8 @@ def install_command(args: argparse.Namespace) -> None:
         old = load_state(state_dir)
         recover_stale_activation(state_dir, old)
     if state_file.exists() and load_state(state_dir).get("status") == "prepared":
-        raise ToolError("launcher cache is already prepared; verify or uninstall it first")
+        if not cache_is_missing_and_inactive(state_dir, load_state(state_dir)):
+            raise ToolError("launcher cache is already prepared; verify or uninstall it first")
     active = list(data_root.glob(f"{GENERATED_PREFIX}*"))
     if active:
         raise ToolError("persistent compatibility files are still active: " + ", ".join(p.name for p in active[:8]))
@@ -2185,27 +2190,61 @@ def rebuild_profiles_for_current_sources(state_dir: Path, state: dict) -> None:
         raise
 
 
-def force_rebuild_profile_cache(state_dir: Path, state: dict) -> None:
-    """Remove only ledgered generated profiles, then recreate selected/core caches."""
+def clear_profile_cache(state_dir: Path, state: dict) -> None:
+    """Erase the cache only after validating its location and the inactive live tree."""
     cache_root = Path(state["cache_root"])
-    expected_cache_root = Path(state["game_root"]) / "TotalWarAttilaData/.mk1212-cache"
-    if cache_root.resolve() != expected_cache_root.resolve():
-        raise ToolError(f"refusing unexpected cache rebuild target: {cache_root}")
-    if cache_root.is_symlink():
-        raise ToolError(f"refusing symlinked cache rebuild target: {cache_root}")
-    profiles_root = cache_root / "profiles"
-    if profiles_root.is_symlink() or (profiles_root.exists() and not profiles_root.is_dir()):
-        raise ToolError(f"refusing unexpected profiles cache target: {profiles_root}")
-
-    report_rebuild_progress(state_dir, "Removing generated compatibility profiles")
-    if profiles_root.exists():
-        shutil.rmtree(profiles_root)
+    game_data = Path(state["game_root"]) / "TotalWarAttilaData"
+    if cache_root != game_data / ".mk1212-cache" or cache_root.is_symlink():
+        raise ToolError(f"refusing unexpected cache removal target: {cache_root}")
+    if game_data.is_symlink() or (cache_root.exists() and not cache_root.is_dir()):
+        raise ToolError(f"refusing unexpected cache removal target: {cache_root}")
+    if game_running() or os.path.lexists(state_dir / "activation.json"):
+        raise ToolError("cannot clear cache while ATTILA or a launcher activation is active")
+    if (Path(state["data_root"]) != game_data / "data" or
+            Path(state["manifest"]) != game_data / "feral/en/manifest.txt"):
+        raise ToolError("cannot clear cache with unexpected ATTILA paths")
+    manifest_names = {name for name, _ in parse_manifest(Path(state["manifest"]).read_bytes())}
+    failures = inactive_live_tree_failures(state, manifest_names)
+    if any(name.casefold().startswith(GENERATED_PREFIX) or name.casefold().endswith(".lua")
+           for name in manifest_names):
+        failures.append("live manifest still contains generated packs or loose Lua")
+    if failures:
+        raise ToolError("cannot clear cache while compatibility files are active:\n  " +
+                        "\n  ".join(failures))
+    # Persist invalidation first so an interrupted deletion can be retried safely.
     state["profiles"] = {}
     state.pop("default_profile_key", None)
     state.pop("core_profile_key", None)
-    state["cache_rebuild_requested_at"] = utc_now()
+    state["cache_cleared_at"] = utc_now()
     save_json(state_dir / "state.json", state)
+    report_rebuild_progress(state_dir, "Removing the compatibility cache")
+    if cache_root.exists():
+        shutil.rmtree(cache_root)
+
+
+def force_rebuild_profile_cache(state_dir: Path, state: dict) -> None:
+    """Clear existing output, including interrupted builds, then rebuild."""
+    clear_profile_cache(state_dir, state)
     rebuild_profiles_for_current_sources(state_dir, state)
+
+
+def repair_incomplete_cache(state_dir: Path, state: dict) -> None:
+    """Rebuild damaged saved profiles after the user has chosen to continue."""
+    if not any(verify_profile(profile) for profile in state.get("profiles", {}).values()):
+        return
+    report_rebuild_progress(state_dir, "Repairing missing or damaged compatibility cache files")
+    done_path = start_rebuild_progress_window(
+        state_dir, "Repairing compatibility cache",
+        "Cached files are missing or damaged. Rebuilding from installed Workshop files.",
+    )
+    try:
+        force_rebuild_profile_cache(state_dir, state)
+    except BaseException as exc:
+        save_json(done_path, {"status": "failed", "message": f"Cache repair stopped: {exc}"})
+        time.sleep(0.5)
+        raise
+    save_json(done_path, {"status": "success", "message": "Cache repair complete."})
+    time.sleep(0.5)
 
 
 def choose_with_cache_actions(state_dir: Path, state: dict,
@@ -2222,16 +2261,25 @@ def choose_with_cache_actions(state_dir: Path, state: dict,
         if choice["action"] == "confirm":
             return choice
         report_rebuild_progress(state_dir, "Starting compatibility cache rebuild")
-        done_path = start_rebuild_progress_window(state_dir)
+        clearing = choice["action"] == "clear"
+        done_path = start_rebuild_progress_window(
+            state_dir, "Clearing compatibility cache" if clearing else "Rebuilding compatibility cache",
+            "Removing cached files. Please leave the launcher open." if clearing else
+            "Recreating compatibility packs from installed Workshop files. Please leave the launcher open.",
+        )
         try:
-            force_rebuild_profile_cache(state_dir, state)
+            if clearing:
+                clear_profile_cache(state_dir, state)
+            else:
+                force_rebuild_profile_cache(state_dir, state)
         except BaseException as exc:
             save_json(done_path, {"status": "failed", "message": f"Cache rebuild stopped: {exc}"})
             time.sleep(0.5)
             raise
-        save_json(done_path, {"status": "success", "message": "Cache rebuild complete."})
+        save_json(done_path, {"status": "success", "message": "Cache cleared." if clearing else "Cache rebuild complete."})
         time.sleep(0.5)
-        status = "Cache rebuilt successfully from the installed Workshop files."
+        status = ("Cache cleared. Rebuild Cache or Launch will recreate the files when needed."
+                  if clearing else "Cache rebuilt successfully from the installed Workshop files.")
 
 
 def uninstall_command(args: argparse.Namespace) -> None:
@@ -2289,6 +2337,7 @@ def configure_command(args: argparse.Namespace) -> None:
         return
     state["optional_load_order"] = choice["order"]
     state["selected_optional_packs"] = choice["selected"]
+    repair_incomplete_cache(state_dir, state)
     names = selected_names(state, choice["selected"])
     profile = ensure_profile_with_progress(state_dir, state, names)
     save_json(state_dir / "state.json", state)
@@ -2408,9 +2457,6 @@ def launch_command(args: argparse.Namespace) -> None:
     except (MissingGameExecutableError, UnsupportedGameExecutableError) as exc:
         show_executable_compatibility_error(exc)
     refresh_optional_sources(state)
-    if not rebuild_changed_workshop_sources_for_launch(state_dir, state):
-        return
-    verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
     if args.core_only:
         picked = []
     elif args.no_picker:
@@ -2429,6 +2475,10 @@ def launch_command(args: argparse.Namespace) -> None:
         report_rebuild_progress(state_dir, "Submod selection confirmed; preparing ATTILA launch",
                                 notify=True)
     state["selected_optional_packs"] = picked
+    repair_incomplete_cache(state_dir, state)
+    if not rebuild_changed_workshop_sources_for_launch(state_dir, state):
+        return
+    verify_command(argparse.Namespace(state_dir=str(state_dir), quick=True, json=False))
     names = selected_names(state, picked)
     profile = ensure_profile_with_progress(state_dir, state, names)
     save_json(state_dir / "state.json", state)

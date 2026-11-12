@@ -70,7 +70,9 @@ After that:
 - Drag them into priority order, with the highest priority at the top.
 - Hit **Launch**.
 
-If something gets weird later, **Rebuild Cache** recreates the launcher’s generated files from your Steam Workshop subscriptions. **Help** explains the basics without making you come back here and read all this again.
+**Clear Cache** deletes the entire launcher cache (including saved recovery files) to free disk space while keeping your submod choices. Use **Rebuild Cache** or **Launch** to recreate the needed files.
+
+If something gets weird later, **Rebuild Cache** clears existing cached files first, then recreates the launcher’s generated files from your Steam Workshop subscriptions. **Help** explains the basics without making you come back here and read all this again.
 
 ### What It Looks Like
 

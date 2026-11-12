@@ -195,6 +195,10 @@ static MKLauncherController *MKController = nil;
     NSButton *creditsButton = [NSButton buttonWithTitle:@"Credits"
                                                 target:self action:@selector(showCredits:)];
     creditsButton.bezelStyle = NSBezelStyleRounded;
+    NSButton *clearButton = [NSButton buttonWithTitle:@"Clear Cache"
+                                              target:self action:@selector(clearCache:)];
+    clearButton.bezelStyle = NSBezelStyleRounded;
+    clearButton.toolTip = @"Delete the entire launcher cache to free disk space.";
     NSButton *rebuildButton = [NSButton buttonWithTitle:@"Rebuild Cache"
                                                 target:self action:@selector(rebuildCache:)];
     rebuildButton.bezelStyle = NSBezelStyleRounded;
@@ -212,7 +216,7 @@ static MKLauncherController *MKController = nil;
     [spacer setContentHuggingPriority:NSLayoutPriorityDefaultLow
                        forOrientation:NSLayoutConstraintOrientationHorizontal];
     NSStackView *buttonRow = [NSStackView stackViewWithViews:
-        @[helpButton, creditsButton, rebuildButton, spacer, cancelButton, confirmButton]];
+        @[helpButton, creditsButton, clearButton, rebuildButton, spacer, cancelButton, confirmButton]];
     buttonRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     buttonRow.spacing = 10;
     buttonRow.alignment = NSLayoutAttributeCenterY;
@@ -323,12 +327,28 @@ static MKLauncherController *MKController = nil;
 
 - (void)confirm:(id)sender { (void)sender; [self emitAction:@"confirm"]; }
 - (void)cancel:(id)sender { (void)sender; [self emitAction:@"cancel"]; }
+- (void)clearCache:(id)sender {
+    (void)sender;
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Clear the compatibility cache?";
+    alert.informativeText = @"This deletes the entire launcher cache, including saved recovery files, "
+        "to free disk space. Your submod choices and Workshop downloads are kept. "
+        "Use Rebuild Cache or Launch to recreate the needed files.";
+    alert.alertStyle = NSAlertStyleWarning;
+    [alert addButtonWithTitle:@"Clear Cache"];
+    [alert addButtonWithTitle:@"Cancel"];
+    [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse response) {
+        if (response == NSAlertFirstButtonReturn) [self emitAction:@"clear"];
+    }];
+}
+
 - (void)rebuildCache:(id)sender {
     (void)sender;
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"Rebuild the compatibility cache?";
     alert.informativeText =
-        @"This can take a few minutes. The launcher will recreate its generated "
+        @"This deletes the entire cache, including saved recovery files, before rebuilding. "
+         "This can take a few minutes. The launcher will recreate its generated "
          "compatibility packs from your installed Workshop files, then return to "
          "the submod screen. ATTILA will not launch until the rebuild is finished.";
     alert.alertStyle = NSAlertStyleInformational;

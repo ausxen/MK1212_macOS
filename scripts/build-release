@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="${0:A:h:h}"
-version="${VERSION:-0.8.2}"
+version="${VERSION:-0.8.3}"
 dist_root="$repo_root/dist"
 archive="$dist_root/mk1212-mac-launcher-v${version}.zip"
 
@@ -18,7 +18,7 @@ trap 'rm -rf "$build_root"' EXIT
 mkdir -p "$release_root" "$dist_root"
 "$repo_root/scripts/build-package" "$release_root/Install MK1212 Mac Launcher.pkg" >/dev/null
 cp "$repo_root/Read_Me_First.txt" "$release_root/Read_Me_First.txt"
-cp "$repo_root/RELEASE-NOTES-0.8.2.md" "$release_root/RELEASE-NOTES-0.8.2.md"
+cp "$repo_root/RELEASE-NOTES-0.8.3.md" "$release_root/RELEASE-NOTES-0.8.3.md"
 cp "$repo_root/NOTICE.md" "$release_root/NOTICE.md"
 
 ditto -c -k --norsrc --keepParent "$release_root" "$archive"

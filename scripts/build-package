@@ -3,7 +3,7 @@ set -euo pipefail
 export COPYFILE_DISABLE=1
 
 repo_root="${0:A:h:h}"
-version="${VERSION:-0.8.2}"
+version="${VERSION:-0.8.3}"
 output="${1:-$repo_root/dist/MK1212-macOS-${version}.pkg}"
 signing_identity="${CODESIGN_IDENTITY:--}"
 installer_identity="${INSTALLER_IDENTITY:-}"
@@ -49,7 +49,7 @@ cp "$repo_root/app/uninstaller/Info.plist" "$uninstaller_root/Contents/Info.plis
 cp "$uninstaller_executable" "$uninstaller_root/Contents/MacOS/Uninstall MK1212 Mac Launcher"
 cp "$repo_root/app/MK1212MacLauncher.icns" "$uninstaller_root/Contents/Resources/MK1212MacLauncher.icns"
 cp "$repo_root/INSTALL.txt" "$install_root/README.txt"
-cp "$repo_root/RELEASE-NOTES-0.8.2.md" "$install_root/RELEASE-NOTES-0.8.2.md"
+cp "$repo_root/RELEASE-NOTES-0.8.3.md" "$install_root/RELEASE-NOTES-0.8.3.md"
 cp "$repo_root/installer/resources/Welcome.html" "$installer_resources/Welcome.html"
 cp "$repo_root/installer/resources/Conclusion.html" "$installer_resources/Conclusion.html"
 
